@@ -1312,7 +1312,7 @@ class CustomNuScenesOfflineLocalMapDataset(CustomNuScenesDataset):
         scene_token = input_dict["scene_token"]
         self.pre_pipeline(input_dict)
         # import pdb;pdb.set_trace()
-        example = self.pipeline(input_dict)
+        example = self.pipeline(input_dict) #input_dict is input but also output, with keys expanded
         example = self.vectormap_pipeline(example, input_dict)
 
         if self.dn_enabled:
@@ -1425,7 +1425,7 @@ class CustomNuScenesOfflineLocalMapDataset(CustomNuScenesDataset):
         info = self.data_infos[index]
         # standard protocal modified from SECOND.Pytorch
         input_dict = dict(
-            sample_idx=info["token"],
+            sample_idx=info["token"], # scene token?
             pts_filename=info["lidar_path"],
             lidar_path=info["lidar_path"],
             sweeps=info["sweeps"],
@@ -1437,7 +1437,7 @@ class CustomNuScenesOfflineLocalMapDataset(CustomNuScenesDataset):
             next_idx=info["next"],
             scene_token=info["scene_token"],
             can_bus=info["can_bus"],
-            frame_idx=info["frame_idx"],
+            frame_idx=info["frame_idx"], #frame token?
             timestamp=info["timestamp"],
             map_location=info["map_location"],
         )
@@ -1454,7 +1454,7 @@ class CustomNuScenesOfflineLocalMapDataset(CustomNuScenesDataset):
             input_dict["camera2ego"] = []
             input_dict["camera_intrinsics"] = []
             input_dict["camego2global"] = []
-            for cam_type, cam_info in info["cams"].items():
+            for cam_type, cam_info in info["cams"].items(): # here defines the sequency of 6 cameras.
                 image_paths.append(cam_info["data_path"])
                 # obtain lidar to image transformation matrix
                 lidar2cam_r = np.linalg.inv(cam_info["sensor2lidar_rotation"])
@@ -1539,8 +1539,12 @@ class CustomNuScenesOfflineLocalMapDataset(CustomNuScenesDataset):
         Returns:
             dict: Testing data dict of the corresponding index.
         """
-        input_dict = self.get_data_info(index)
-        self.pre_pipeline(input_dict)
+        input_dict = self.get_data_info(index) #img_filename is the 6*images path
+        # print(index)
+        # if (index != 0):
+        #     return None
+        # print(input_dict['img_filename'])
+        self.pre_pipeline(input_dict) # only dict input_dict's keys are expanded
         example = self.pipeline(input_dict)
         if self.is_vis_on_test:
             example = self.vectormap_pipeline(example, input_dict)
@@ -1552,6 +1556,7 @@ class CustomNuScenesOfflineLocalMapDataset(CustomNuScenesDataset):
             dict: Data dictionary of the corresponding index.
         """
         if self.test_mode:
+            # print(idx)
             return self.prepare_test_data(idx)
         while True:
 

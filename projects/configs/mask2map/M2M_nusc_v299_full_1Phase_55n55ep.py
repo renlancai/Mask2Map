@@ -1,9 +1,5 @@
 _base_ = ["../datasets/custom_nus-3d.py", "../_base_/default_runtime.py"]
 
-work_dir = None
-resume_from = None
-load_from = "./work_dirs/M2M_nusc_r50_full_1Phase_55n55ep/latest.pth"
-resume_optimizer = False
 
 #
 plugin = True
@@ -67,35 +63,45 @@ dn_enabled = True
 
 aux_seg_cfg = dict(
     use_aux_seg=True,
-    bev_seg=False,
+    bev_seg=True,
     pv_seg=True,
     seg_classes=1,
     feat_down_sample=32,
     pv_thickness=1,
 )
 
-with_cp_backbone = True
-with_cp_pts_decoder = True
-
 model = dict(
     type="Mask2Map",
     use_grid_mask=True,
     video_test_mode=False,
-    pretrained=dict(img="ckpts/sparsebev_resnet.pth"),
+    
     img_backbone=dict(
-        type="ResNet",
-        depth=50,
-        num_stages=4,
-        out_indices=(3,),
-        frozen_stages=1,
-        norm_cfg=dict(type="BN", requires_grad=False),
-        with_cp=with_cp_backbone,
+        type='VoVNet',
+        spec_name='V-99-eSE',
+        input_ch=3,
+        # out_features=['stage4', 'stage5'],
+        out_features=['stage5'],
+        frozen_stages=-1,
         norm_eval=True,
-        style="pytorch",
+        init_cfg=dict(type='Pretrained', checkpoint='ckpts/vovnet99_ese_detectron2.pth', prefix='backbone.bottom_up') #good
     ),
+    
+    # pretrained=dict(img="ckpts/resnet50-19c8e357.pth"),
+    # img_backbone=dict(
+    #     type="ResNet",
+    #     depth=50,
+    #     num_stages=4,
+    #     out_indices=(3,),
+    #     frozen_stages=1,
+    #     norm_cfg=dict(type="BN", requires_grad=False),
+    #     norm_eval=True,
+    #     style="pytorch",
+    # ),
+    
     img_neck=dict(
         type="FPN",
-        in_channels=[2048],
+        # in_channels=[2048],
+        in_channels=[1024],
         out_channels=_dim_,
         start_level=0,
         add_extra_convs="on_output",
@@ -103,7 +109,7 @@ model = dict(
         relu_before_extra_convs=True,
     ),
     pts_bbox_head=dict(
-        type="Mask2MapHead_2Phase",
+        type="Mask2MapHead_1Phase",
         bev_h=bev_h_,
         bev_w=bev_w_,
         num_vec_one2one=num_vec,
@@ -118,21 +124,17 @@ model = dict(
         code_size=2,
         dn_enabled=dn_enabled,
         dn_weight=1,
-        cls_join=True,
-        tr_cls_join=False,
         code_weights=[1.0, 1.0, 1.0, 1.0],
         aux_seg=aux_seg_cfg,
+        pc_range=point_cloud_range,
         transformer=dict(
-            type="Mask2Map_Transformer_2Phase_CP",
+            type="Mask2Map_Transformer_1Phase",
             rotate_prev_bev=True,
-            dropout=0.1,  # cross attention dropout
-            thr=0.8,  # point threshold
+            use_can_bus=True,
             dn_enabled=dn_enabled,
             dn_group_num=5,
             dn_noise_scale=0.01,
-            thresh_of_mask_for_pos=0.3,
-            mask_noise_scale=0.1,
-            pts2mask_noise_scale=0.1,
+            mask_noise_scale=0.2,
             num_vec_one2one=num_vec,
             embed_dims=_dim_,
             bev_encoder=None,
@@ -165,7 +167,7 @@ model = dict(
                 ),
                 positional_encoding=dict(num_feats=128, normalize=True),
             ),
-            encoder=dict(
+            encoder=dict( # 2D-3D bev
                 type="LSSTransform",
                 in_channels=_dim_,
                 out_channels=_dim_,
@@ -184,10 +186,16 @@ model = dict(
                 num_layers=3,
                 layer_cfg=dict(  # Mask2FormerTransformerDecoderLayer
                     self_attn_cfg=dict(
-                        embed_dims=256, num_heads=8, dropout=0.0, batch_first=True
+                        embed_dims=256,
+                        num_heads=8,
+                        dropout=0.0,
+                        batch_first=True,
                     ),  # MultiheadAttention
                     cross_attn_cfg=dict(
-                        embed_dims=256, num_heads=8, dropout=0.0, batch_first=True
+                        embed_dims=256,
+                        num_heads=8,
+                        dropout=0.0,
+                        batch_first=True,
                     ),  # MultiheadAttention
                     ffn_cfg=dict(
                         embed_dims=256,
@@ -199,54 +207,16 @@ model = dict(
                 ),
                 init_cfg=None,
             ),
-            decoder=dict(
-                type="MapTRDecoder",
-                num_layers=6,
-                return_intermediate=True,
-                transformerlayers=dict(
-                    type="DecoupledDetrTransformerDecoderLayer_CP",
-                    with_cp=with_cp_pts_decoder,
-                    num_vec=num_vec,
-                    num_pts_per_vec=fixed_ptsnum_per_pred_line,
-                    attn_cfgs=[
-                        dict(type="MultiheadAttention", embed_dims=_dim_, num_heads=8, dropout=0.1),
-                        dict(type="MultiheadAttention", embed_dims=_dim_, num_heads=8, dropout=0.1),
-                        dict(type="CustomMSDeformableAttention", embed_dims=_dim_, num_levels=4),
-                    ],
-                    feedforward_channels=_ffn_dim_,
-                    ffn_dropout=0.1,
-                    operation_order=(
-                        "self_attn",
-                        "norm",
-                        "self_attn",
-                        "norm",
-                        "cross_attn",
-                        "norm",
-                        "ffn",
-                        "norm",
-                    ),
-                ),
-            ),
         ),
-        bbox_coder=dict(
-            type="MapTRNMSFreeCoder",
-            post_center_range=[-20, -35, -20, -35, 20, 35, 20, 35],
-            pc_range=point_cloud_range,
-            max_num=50,
-            voxel_size=voxel_size,
-            num_classes=num_map_classes,
-        ),
-        positional_encoding=dict(
-            type="LearnedPositionalEncoding",
-            num_feats=_pos_dim_,
-            row_num_embed=bev_h_,
-            col_num_embed=bev_w_,
-        ),
-        loss_cls=dict(type="FocalLoss", use_sigmoid=True, gamma=2.0, alpha=0.25, loss_weight=2.0),
-        loss_bbox=dict(type="L1Loss", loss_weight=0.0),
-        loss_iou=dict(type="GIoULoss", loss_weight=0.0),
-        loss_pts=dict(type="PtsL1Loss", loss_weight=5.0),
-        loss_dir=dict(type="PtsDirCosLoss", loss_weight=0.005),
+        loss_cls=dict(
+            type="FocalLoss",
+            use_sigmoid=True,
+            gamma=2.0,
+            alpha=0.25,
+            loss_weight=2.0,
+        ),  # uesless in Phase 1
+        loss_bbox=dict(type="L1Loss", loss_weight=0.0),  # uesless in Phase 1
+        loss_iou=dict(type="GIoULoss", loss_weight=0.0),  # uesless in Phase 1
         loss_seg=dict(type="SimpleLoss", pos_weight=4.0, loss_weight=1.0),
         loss_pv_seg=dict(type="SimpleLoss", pos_weight=1.0, loss_weight=2.0),
         loss_segm_cls=dict(
@@ -257,7 +227,10 @@ model = dict(
             class_weight=[1.0] * len(map_classes) + [0.1],
         ),
         loss_segm_mask=dict(
-            type="CrossEntropyLoss", use_sigmoid=True, reduction="mean", loss_weight=5.0
+            type="CrossEntropyLoss",
+            use_sigmoid=True,
+            reduction="mean",
+            loss_weight=5.0,
         ),
         loss_segm_dice=dict(
             type="DiceLoss",
@@ -313,7 +286,12 @@ train_pipeline = [
     ),
     dict(type="CustomPointToMultiViewDepth", downsample=1, grid_config=grid_config),
     dict(type="PadMultiViewImageDepth", size_divisor=32),
-    dict(type="DefaultFormatBundle3D", with_gt=False, with_label=False, class_names=map_classes),
+    dict(
+        type="DefaultFormatBundle3D",
+        with_gt=False,
+        with_label=False,
+        class_names=map_classes,
+    ),
     dict(type="CustomCollect3D", keys=["img", "gt_depth"]),
 ]
 
@@ -345,7 +323,7 @@ data = dict(
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_train.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_train.pkl",
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -365,7 +343,7 @@ data = dict(
     val=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_val.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_val.pkl",
         map_ann_file=data_root + "nuscenes_mask2map_anns_val.json",
         pipeline=test_pipeline,
         bev_size=(bev_h_, bev_w_),
@@ -381,7 +359,7 @@ data = dict(
     test=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_val.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_val.pkl",
         map_ann_file=data_root + "nuscenes_mask2map_anns_val.json",
         pipeline=test_pipeline,
         bev_size=(bev_h_, bev_w_),
@@ -398,37 +376,40 @@ data = dict(
 )
 
 optimizer = dict(
-    type='AdamW',
+    type="AdamW",
     lr=6e-4,
     paramwise_cfg=dict(
         custom_keys={
-            'img_backbone': dict(lr_mult=0.1),
-        }),
-    weight_decay=0.01)
+            "img_backbone": dict(lr_mult=0.1),
+        }
+    ),
+    weight_decay=0.01,
+)
 
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # learning policy
 lr_config = dict(
-    policy='CosineAnnealing',
-    warmup='linear',
+    policy="CosineAnnealing",
+    warmup="linear",
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
-    min_lr_ratio=1e-3)
+    min_lr_ratio=1e-3,
+)
 total_epochs = 55
-evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer',
-                  save_best='NuscMap_chamfer/mAP', rule='greater')
-# total_epochs = 50
-# evaluation = dict(interval=1, pipeline=test_pipeline)
+evaluation = dict(
+    interval=110,
+    pipeline=test_pipeline,
+    metric="chamfer",
+    save_best="NuscMap_chamfer/mAP",
+    rule="greater",
+)
 
-runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
+runner = dict(type="EpochBasedRunner", max_epochs=total_epochs)
 
 log_config = dict(
-    interval=440,
-    hooks=[
-        dict(type='TextLoggerHook'),
-        dict(type='TensorboardLoggerHook')
-    ])
-fp16 = dict(loss_scale=512.)
-checkpoint_config = dict(max_keep_ckpts=22, interval=1)
-find_unused_parameters=False
-
+    interval=50,
+    hooks=[dict(type="TextLoggerHook"), dict(type="TensorboardLoggerHook")],
+)
+fp16 = dict(loss_scale=512.0)
+checkpoint_config = dict(max_keep_ckpts=2, interval=1)
+find_unused_parameters = True

@@ -53,6 +53,7 @@ class MapTRDecoder(TransformerLayerSequence):
         for lid, layer in enumerate(self.layers):
 
             reference_points_input = reference_points[..., :2].unsqueeze(2)  # BS NUM_QUERY NUM_LEVEL 2
+            # also, the transformer layer trigger onnx converting failing
             output = layer(output, *args, reference_points=reference_points_input, key_padding_mask=key_padding_mask, **kwargs)
             output = output.permute(1, 0, 2)
 
@@ -442,6 +443,7 @@ class DecoupledDetrTransformerDecoderLayer_CP(BaseTransformerLayer):
                 norm_index += 1
 
             elif layer == "cross_attn":
+                # here
                 query = self.attentions[attn_index](
                     query,
                     key,

@@ -19,6 +19,34 @@ from projects.mmdet3d_plugin.bevformer.modules.temporal_self_attention import Te
 from projects.mmdet3d_plugin.bevformer.modules.spatial_cross_attention import MSDeformableAttention3D
 
 
+import inspect
+
+def get_line():
+    # 获取调用者的帧信息（f_back）
+    frame = inspect.currentframe().f_back
+    return frame.f_lineno
+ 
+def getxxxxxx():
+    # 获取当前帧信息
+    frame = inspect.currentframe()
+    # 获取调用者的帧信息
+    caller_frame = inspect.getouterframes(frame)[1]
+    # 获取文件名
+    filename = inspect.getfile(caller_frame[0])
+    # 获取行号
+    line_number = caller_frame.lineno
+    return filename, line_number
+ 
+
+def log_device(data,  line_number):
+    if isinstance(data, list):
+        for ele in data:
+            log_device(ele, line_number)
+    elif isinstance(data, torch.Tensor):
+        print(f'__ {line_number} __ {data.device}')
+    else:
+        pass
+
 def normalize_2d_pts(pts, pc_range):
     patch_h = pc_range[4] - pc_range[1]
     patch_w = pc_range[3] - pc_range[0]
@@ -42,7 +70,9 @@ def farthest_point_sample(xyz, npoint):
     B, N, C = xyz.shape
     centroids = torch.zeros(B, npoint, dtype=torch.long).to(device)
     distance = torch.ones(B, N).to(device) * 1e10
-    farthest = torch.randint(0, N, (B,), dtype=torch.long).to(device)
+    # farthest = torch.randint(0, N, (B,), dtype=torch.long).to(device)
+    farthest = (torch.rand(size=(B,)) * N).long().to(device) # for onnx
+    
     batch_indices = torch.arange(B, dtype=torch.long).to(device)
     for i in range(npoint):
         centroids[:, i] = farthest
@@ -185,6 +215,8 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
 
         self.init_layers()
         self.feat_down_sample_indice = feat_down_sample_indice
+        
+        self.debug = {}
 
     def init_layers(self):
         """Initialize layers of the Detr3DTransformer."""
@@ -258,6 +290,7 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
 
         images = mlvl_feats[self.feat_down_sample_indice]
         img_metas = kwargs["img_metas"]
+
         encoder_outputdict = self.encoder(images, img_metas)
         bev_embed = encoder_outputdict["bev"]
         depth = encoder_outputdict["depth"]
@@ -519,7 +552,9 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
 
             query_pos_embeds.append(torch.stack(query_pos_embed_list))
         mask_aware_query_pos = torch.stack(query_pos_embeds)
-        mask_aware_query_pos = torch.nan_to_num(mask_aware_query_pos, 0)
+        # mask_aware_query_pos = torch.nan_to_num(mask_aware_query_pos, 0) #todo:test
+        # mask_aware_query_pos = torch.where(torch.isnan(mask_aware_query_pos), 0.0, mask_aware_query_pos)
+        mask_aware_query_pos[torch.isnan(mask_aware_query_pos)] = 0
 
         mask_aware_query_feat_pia = mask_aware_query_feat_pia.unsqueeze(2) + pts_query_feat
         mask_aware_query_pos = mask_aware_query_pos.unsqueeze(2) + pts_query_pos
@@ -555,11 +590,11 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
         bool_mat[p_nodes[:, 0], p_nodes[:, 1], p_nodes[:, 2]] = 1
         bool_mat = bool_mat.bool()
         seg_mask_pred = seg_mask_pred * (bool_mat.unsqueeze(1))
-
+        
         cnt_seg_mask_pred = (seg_mask_pred > 0).reshape(bs, q, -1).sum(-1)
         al_max_q = cnt_seg_mask_pred.max()
         sam_mask = cnt_seg_mask_pred > self.sam
-
+        
         temp_al_result = []
         for bs_i in range(len(seg_mask_pred)):
             bs_mask_pred = seg_mask_pred[bs_i]
@@ -618,12 +653,16 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
         value_f = self.lin_v(bs_pointset_feats)
 
         key = self.lin_k_pf_cat(torch.cat([key_f, key_p], -1))  # _cat
+        
+        # self.debug['key1'] = key 
         value = self.lin_v_pf_cat(torch.cat([value_f, value_p], -1))
 
         key[~al_result_bool] = 0
+        # self.debug['key2'] = key 
         value[~al_result_bool] = 0
 
         key = key.reshape(bs * q, -1, self.embed_dims * 2).permute(1, 0, 2)
+        # self.debug['key3'] = key 
         value = value.reshape(bs * q, -1, self.embed_dims * 2).permute(1, 0, 2)
 
         return query, key, value, mask_aware_query, mask_aware_query_norm
@@ -737,6 +776,95 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
 
         return mask_pred_list, cls_pred_list, instance_query_feat, bev_embed, bev_embed_ms, depth, dn_information, kwargs
 
+    def IMPNet_part(self, mlvl_feats, ouput_dic):
+        
+        bev_embed = ouput_dic["bev"]
+        depth = ouput_dic["depth"]
+        bs = mlvl_feats[0].size(0)
+
+        num_vecs = self.num_vec_one2one
+
+        bev_embed_single = bev_embed.view(bs, self.bev_h, self.bev_w, bev_embed.shape[-1]).permute(0, 3, 1, 2).contiguous()
+    
+        bev_embed_ms = self.bev_encoder(bev_embed_single) #good
+        bev_embed_ms = self.bev_neck(bev_embed_ms) # some bad codes inside: MultiScale-Self-Attn
+        mask_feat = bev_embed_ms[0].to(torch.float32)
+        ms_memorys = bev_embed_ms[:0:-1]
+        
+        decoder_inputs = []
+        decoder_pos_encodings = []
+        size_list = []
+        for i in range(self.num_transformer_feat_level):
+            size_list.append(ms_memorys[i].shape[-2:])
+            decoder_input = ms_memorys[i]
+            decoder_input = decoder_input.flatten(2)
+            decoder_input = decoder_input.permute(0, 2, 1)  # [bs, hw, c]
+            level_embed = self.level_embed.weight[i].view(1, 1, -1)
+            decoder_input = decoder_input + level_embed
+            mask = decoder_input.new_zeros((bs,) + ms_memorys[i].shape[-2:], dtype=torch.bool)
+            decoder_pos_encoding = self.decoder_positional_encoding(mask).flatten(2).permute(0, 2, 1)
+            # print(f"____ decoder_input: {decoder_input.device}")
+            decoder_inputs.append(decoder_input)
+            decoder_pos_encodings.append(decoder_pos_encoding)
+
+        instance_query_feat = self.instance_query_feat.weight[0:num_vecs].unsqueeze(0).expand(bs, -1, -1)
+        instance_query_pos = None
+        # onnx good here if close self-attn
+        mask_dict, known_masks, known_bid, map_known_indice = (None, None, None, None)
+        
+        dn_information = [mask_dict, known_masks, known_bid, map_known_indice]
+        cls_pred_list = []
+        mask_pred_list = []
+        cls_pred, mask_pred, attn_mask = self._forward_head(instance_query_feat, mask_feat, ms_memorys[0].shape[-2:])
+        cls_pred_list.append(cls_pred)
+        mask_pred_list.append(mask_pred)
+        
+        if self.dn_enabled == False or self.training == False: #test?
+            self_attn_mask = torch.zeros((num_vecs, num_vecs), dtype=torch.float32, device=mlvl_feats[0].device)
+            self_attn_mask[self.num_vec_one2one:, :self.num_vec_one2one] = 1.0
+            self_attn_mask[:self.num_vec_one2one, self.num_vec_one2one:] = 1.0
+            self_attn_mask = self_attn_mask > 0.5
+            
+            self_attn_mask = self_attn_mask.unsqueeze(0).expand(bs, -1, -1)
+            self_attn_mask = self_attn_mask.unsqueeze(1)
+            self_attn_mask = self_attn_mask.repeat((1, self.num_heads, 1, 1))
+            self_attn_mask = self_attn_mask.flatten(0, 1)
+        
+        for i in range(self.num_segm_decoder_layers):
+            level_idx = i % self.num_transformer_feat_level
+            # if a mask is all True(all background), then set it all False.
+            mask_sum = (attn_mask.sum(-1) != attn_mask.shape[-1]).unsqueeze(-1)
+            attn_mask = attn_mask & mask_sum
+            log_device(attn_mask, get_line())
+            # cross_attn + self_attn
+            layer = self.segm_decoder.layers[i]
+            instance_query_feat = layer(
+                query=instance_query_feat,
+                key=decoder_inputs[level_idx],
+                value=decoder_inputs[level_idx],
+                query_pos=instance_query_pos,
+                key_pos=decoder_pos_encodings[level_idx],
+                cross_attn_mask=attn_mask,
+                self_attn_mask=self_attn_mask,
+                query_key_padding_mask=None,
+                key_padding_mask=None,
+            ) #onnx should close?????
+            cls_pred, mask_pred, attn_mask = self._forward_head(
+                instance_query_feat, mask_feat, ms_memorys[(i + 1) % self.num_transformer_feat_level].shape[-2:]
+            )
+
+            if self.dn_enabled and i != self.num_segm_decoder_layers - 1 and self.training:
+                padding_mask = padding_mask_3level[(i + 1) % self.num_segm_decoder_layers]
+                attn_mask = attn_mask.view([bs, self.num_heads, -1, attn_mask.shape[-1]])
+                attn_mask[:, :, :-num_vecs] = padding_mask
+                attn_mask = attn_mask.flatten(0, 1)
+
+            cls_pred_list.append(cls_pred)
+            mask_pred_list.append(mask_pred)
+        
+        return mask_pred_list, cls_pred_list, instance_query_feat, bev_embed, bev_embed_ms, depth, dn_information
+
+
     def MaskGuidedMapDecoder(self, query, key, value, bev_embed_ms, mask_aware_query, mask_aware_query_norm, reg_branches, cls_branches, **kwargs):
         bs = mask_aware_query.shape[0]
         q = query.shape[1]//bs
@@ -766,6 +894,7 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
         bev_embed_ms_flatten = torch.cat(bev_embed_ms_flatten, dim=0)
         spatial_flatten = torch.as_tensor(spatial_flatten, dtype=torch.long, device=query_feat.device)
         level_start_index = torch.cat((spatial_flatten.new_zeros((1,)), spatial_flatten.prod(1).cumsum(0)[:-1]))
+        # onnx almost good
         inter_states, inter_references = self.decoder(
             query=query_feat,
             key=None,
@@ -805,6 +934,12 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
         (mask_pred_list, cls_pred_list, mask_aware_query_feat, bev_embed, bev_embed_ms, depth, dn_information, kwargs) = self.IMPNet(
             mlvl_feats, lidar_feat, bev_queries, bev_h, bev_w, grid_length=grid_length, bev_pos=bev_pos, prev_bev=prev_bev, **kwargs
         )
+        
+        # self.debug["mask_pred_list"] = mask_pred_list[0]
+        # self.debug["cls_pred_list"] = cls_pred_list[0]
+        # self.debug["mask_aware_query_feat"] = mask_aware_query_feat
+        # self.debug["bev_embed_ms"] = bev_embed_ms[0]
+        # self.debug["dn_information"] = dn_information[0]
 
         # MMPNet
         mask_dict, known_masks, known_bid, map_known_indice = dn_information
@@ -817,13 +952,27 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
             known_bid=known_bid,
             map_known_indice=map_known_indice,
         )
+        
+        # self.debug["mask_aware_query_feat1"] = mask_aware_query_feat
+        # self.debug["mask_aware_query_pos"] = mask_aware_query_pos
 
+        # self.debug["mask_pred_list_1"] = mask_pred_list[0]
+        # self.debug["mask_aware_query_feat_1"] = mask_aware_query_feat
+        # self.debug["mask_aware_query_pos_1"] = mask_aware_query_pos
+        # self.debug["bev_embed_1"] = bev_embed
+        
         query, key, value, mask_aware_query, mask_aware_query_norm = self.GeometricFeatureExtractor(
             mask_pred_list,
             mask_aware_query_feat,
             mask_aware_query_pos,
             bev_embed,
         )
+        
+        # self.debug["query"] = query
+        # self.debug["key"] = key
+        # self.debug["value"] = value
+        # self.debug["mask_aware_query"] = mask_aware_query
+        # self.debug["mask_aware_query_norm"] = mask_aware_query_norm
 
         inter_states, inter_references_out, init_reference_out = self.MaskGuidedMapDecoder(
             query,
@@ -836,5 +985,11 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
             cls_branches,
             **kwargs,
         )
+        
+        # self.debug["mask_aware_query1"] = mask_aware_query
+        # self.debug["mask_aware_query_norm1"] = mask_aware_query_norm
+        # self.debug["inter_states"] = inter_states
+        # self.debug["inter_references_out"] = inter_references_out
+        # self.debug["init_reference_out"] = init_reference_out
 
         return bev_embed, mask_pred_list, cls_pred_list, depth, inter_states, init_reference_out, inter_references_out, mask_dict

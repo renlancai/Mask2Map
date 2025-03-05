@@ -2,7 +2,7 @@ _base_ = ["../datasets/custom_nus-3d.py", "../_base_/default_runtime.py"]
 
 work_dir = None
 resume_from = None
-load_from = "./work_dirs/M2M_nusc_r50_full_1Phase_55n55ep/latest.pth"
+load_from = "./work_dirs/M2M_nusc_v299_full_1Phase_55n55ep/latest.pth"
 resume_optimizer = False
 
 #
@@ -67,7 +67,7 @@ dn_enabled = True
 
 aux_seg_cfg = dict(
     use_aux_seg=True,
-    bev_seg=False,
+    bev_seg=True,
     pv_seg=True,
     seg_classes=1,
     feat_down_sample=32,
@@ -81,21 +81,21 @@ model = dict(
     type="Mask2Map",
     use_grid_mask=True,
     video_test_mode=False,
-    pretrained=dict(img="ckpts/sparsebev_resnet.pth"),
+    
     img_backbone=dict(
-        type="ResNet",
-        depth=50,
-        num_stages=4,
-        out_indices=(3,),
-        frozen_stages=1,
-        norm_cfg=dict(type="BN", requires_grad=False),
-        with_cp=with_cp_backbone,
+        type='VoVNet',
+        spec_name='V-99-eSE',
+        input_ch=3,
+        # out_features=['stage4', 'stage5'],
+        out_features=['stage5'],
+        frozen_stages=-1,
         norm_eval=True,
-        style="pytorch",
+        init_cfg=dict(type='Pretrained', checkpoint='ckpts/vovnet99_ese_detectron2.pth', prefix='backbone.bottom_up') #good
     ),
+    
     img_neck=dict(
         type="FPN",
-        in_channels=[2048],
+        in_channels=[1024],
         out_channels=_dim_,
         start_level=0,
         add_extra_convs="on_output",
@@ -317,6 +317,15 @@ train_pipeline = [
     dict(type="CustomCollect3D", keys=["img", "gt_depth"]),
 ]
 
+# test_pipeline = [
+#     dict(type="LoadMultiViewImageFromFiles", to_float32=True),
+#     dict(type="RandomScaleImageMultiViewImage", scales=[0.5]),
+#     dict(type="NormalizeMultiviewImage", **img_norm_cfg),
+#     dict(type="PadMultiViewImage", size_divisor=32),
+#     dict(type="DefaultFormatBundle3D", with_gt=False, with_label=False, class_names=map_classes,),
+#     dict(type="CustomCollect3D", keys=["img"]),
+# ]
+
 test_pipeline = [
     dict(type="LoadMultiViewImageFromFiles", to_float32=True),
     dict(type="RandomScaleImageMultiViewImage", scales=[0.5]),
@@ -340,12 +349,12 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=4,
-    workers_per_gpu=4,
+    samples_per_gpu=1,
+    workers_per_gpu=1,
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_train.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_train.pkl",
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -365,7 +374,7 @@ data = dict(
     val=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_val.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_val.pkl",
         map_ann_file=data_root + "nuscenes_mask2map_anns_val.json",
         pipeline=test_pipeline,
         bev_size=(bev_h_, bev_w_),
@@ -381,7 +390,7 @@ data = dict(
     test=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_val.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_val.pkl",
         map_ann_file=data_root + "nuscenes_mask2map_anns_val.json",
         pipeline=test_pipeline,
         bev_size=(bev_h_, bev_w_),

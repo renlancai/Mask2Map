@@ -234,7 +234,19 @@ def main():
         #     continue
 
         with torch.no_grad():
-            result = model(return_loss=False, rescale=True, **data)
+            result = model(return_loss=False, rescale=True, **data) # to convert to onnx
+            
+        # torch.onnx.export(
+        #     model,  # PyTorch 模型
+        #     **data,  # 示例输入
+        #     "simple_model.onnx",  # 导出的 ONNX 文件路径
+        #     export_params=True,  # 保存模型参数
+        #     opset_version=11,  # ONNX 操作集版本
+        #     do_constant_folding=True,  # 执行常量折叠优化
+        #     input_names=['input'],  # 输入张量的名称
+        #     output_names=['output']  # 输出张量的名称
+        # )
+        
         sample_dir = osp.join(args.show_dir, pts_filename)
         mmcv.mkdir_or_exist(osp.abspath(sample_dir))
 

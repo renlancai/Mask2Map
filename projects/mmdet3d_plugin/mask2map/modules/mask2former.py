@@ -77,7 +77,7 @@ class DetrTransformerEncoderLayer(BaseModule):
         """
         query = self.self_attn(
             query=query, key=query, value=query, query_pos=query_pos, key_pos=query_pos, key_padding_mask=key_padding_mask, **kwargs
-        )
+        ) # bad here
         query = self.norms[0](query)
         query = self.ffn(query)
         query = self.norms[1](query)
@@ -847,7 +847,14 @@ class Mask2FormerTransformerDecoderLayer(DetrTransformerDecoderLayer):
             **kwargs,
         )
         query = self.norms[0](query)
-        query = self.self_attn(query=query, key=query, value=query, query_pos=query_pos, key_pos=query_pos, attn_mask=self_attn_mask, **kwargs)
+        query = self.self_attn(
+            query=query,
+            key=query,
+            value=query,
+            query_pos=query_pos,
+            key_pos=query_pos,
+            attn_mask=self_attn_mask,
+            **kwargs)
         query = self.norms[1](query)
         query = self.ffn(query)
         query = self.norms[2](query)

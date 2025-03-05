@@ -1,8 +1,10 @@
-_base_ = ["../datasets/custom_nus-3d.py", "../_base_/default_runtime.py"]
+_base_ = [
+    "../datasets/custom_nus-3d.py",
+    "../_base_/default_runtime.py"]
 
 work_dir = None
 resume_from = None
-load_from = "./work_dirs/M2M_nusc_r50_full_1Phase_55n55ep/latest.pth"
+load_from = "./work_dirs/M2M_nusc_v299_fusion_full_1Phase_22n22ep/latest.pth"
 resume_optimizer = False
 
 #
@@ -16,10 +18,13 @@ point_cloud_range = [-15.0, -30.0, -10.0, 15.0, 30.0, 10.0]
 voxel_size = [0.15, 0.15, 20.0]
 dbound = [1.0, 35.0, 0.5]
 
+lidar_point_cloud_range = [-15.0, -30.0, -5.0, 15.0, 30.0, 3.0]
+lidar_voxel_size = [0.1, 0.1, 0.2]
+
 grid_config = {
     "x": [-30.0, -30.0, 0.15],  # useless
     "y": [-15.0, -15.0, 0.15],  # useless
-    "z": [-10, 10, 20],  # useless
+    "z": [-10, 10, 20],         # useless
     "depth": [1.0, 35.0, 0.5],  # useful
 }
 
@@ -48,7 +53,7 @@ eval_use_same_gt_sample_num_flag = True
 num_map_classes = len(map_classes)
 
 input_modality = dict(
-    use_lidar=False,
+    use_lidar=True,
     use_camera=True,
     use_radar=False,
     use_map=False,
@@ -67,7 +72,7 @@ dn_enabled = True
 
 aux_seg_cfg = dict(
     use_aux_seg=True,
-    bev_seg=False,
+    bev_seg=True,
     pv_seg=True,
     seg_classes=1,
     feat_down_sample=32,
@@ -77,25 +82,45 @@ aux_seg_cfg = dict(
 with_cp_backbone = True
 with_cp_pts_decoder = True
 
+modality='fusion'
+
 model = dict(
     type="Mask2Map",
     use_grid_mask=True,
     video_test_mode=False,
-    pretrained=dict(img="ckpts/sparsebev_resnet.pth"),
-    img_backbone=dict(
-        type="ResNet",
-        depth=50,
-        num_stages=4,
-        out_indices=(3,),
-        frozen_stages=1,
-        norm_cfg=dict(type="BN", requires_grad=False),
-        with_cp=with_cp_backbone,
-        norm_eval=True,
-        style="pytorch",
+    modality=modality,
+    lidar_encoder=dict(
+        voxelize=dict(
+            max_num_points=10,
+            point_cloud_range=lidar_point_cloud_range,
+            voxel_size=lidar_voxel_size,
+            max_voxels=[90000, 120000]),
+        backbone=dict(
+            type='SparseEncoder',
+            in_channels=5,
+            sparse_shape=[300, 600, 41],
+            output_channels=128,
+            order=('conv', 'norm', 'act'),
+            encoder_channels=((16, 16, 32), (32, 32, 64), (64, 64, 128), (128,
+                                                                        128)),
+            encoder_paddings=([0, 0, 1], [0, 0, 1], [0, 0, [1, 1, 0]], [0, 0]),
+            block_type='basicblock'
+        ),
     ),
+    img_backbone=dict(
+        type='VoVNet',
+        spec_name='V-99-eSE',
+        input_ch=3,
+        # out_features=['stage4', 'stage5'],
+        out_features=['stage5'],
+        frozen_stages=-1,
+        norm_eval=True,
+        init_cfg=dict(type='Pretrained', checkpoint='ckpts/vovnet99_ese_detectron2.pth', prefix='backbone.bottom_up') #good
+    ),
+    
     img_neck=dict(
         type="FPN",
-        in_channels=[2048],
+        in_channels=[1024],
         out_channels=_dim_,
         start_level=0,
         add_extra_convs="on_output",
@@ -124,6 +149,12 @@ model = dict(
         aux_seg=aux_seg_cfg,
         transformer=dict(
             type="Mask2Map_Transformer_2Phase_CP",
+            modality=modality,
+            fuser=dict(
+                type='ConvFuser',
+                in_channels=[_dim_, 256],
+                out_channels=_dim_,
+            ),
             rotate_prev_bev=True,
             dropout=0.1,  # cross attention dropout
             thr=0.8,  # point threshold
@@ -298,54 +329,54 @@ dataset_type = "CustomNuScenesOfflineLocalMapDataset"
 data_root = "data/nuscenes/"
 file_client_args = dict(backend="disk")
 
+reduce_beams=32
+load_dim=5
+use_dim=5
 
 train_pipeline = [
-    dict(type="LoadMultiViewImageFromFiles", to_float32=True),
-    dict(type="RandomScaleImageMultiViewImage", scales=[0.5]),
-    dict(type="PhotoMetricDistortionMultiViewImage"),
-    dict(type="NormalizeMultiviewImage", **img_norm_cfg),
-    dict(
-        type="LoadPointsFromFile",
-        coord_type="LIDAR",
-        load_dim=5,
-        use_dim=5,
-        file_client_args=file_client_args,
-    ),
-    dict(type="CustomPointToMultiViewDepth", downsample=1, grid_config=grid_config),
-    dict(type="PadMultiViewImageDepth", size_divisor=32),
-    dict(type="DefaultFormatBundle3D", with_gt=False, with_label=False, class_names=map_classes),
-    dict(type="CustomCollect3D", keys=["img", "gt_depth"]),
+    dict(type='LoadMultiViewImageFromFiles', to_float32=True),
+    dict(type='CustomLoadPointsFromFile', coord_type='LIDAR', load_dim=load_dim, use_dim=use_dim, reduce_beams=reduce_beams),
+    dict(type='CustomLoadPointsFromMultiSweeps', sweeps_num=9, load_dim=load_dim, use_dim=use_dim, reduce_beams=reduce_beams, pad_empty_sweeps=True, remove_close=True),
+    dict(type='CustomPointsRangeFilter', point_cloud_range=lidar_point_cloud_range),
+    dict(type='PhotoMetricDistortionMultiViewImage'),
+    dict(type='NormalizeMultiviewImage', **img_norm_cfg),
+    dict(type='RandomScaleImageMultiViewImage', scales=[0.5]),
+    dict(type='CustomPointToMultiViewDepth', downsample=1, grid_config=grid_config),
+    dict(type='PadMultiViewImageDepth', size_divisor=32), 
+    dict(type='DefaultFormatBundle3D', with_gt=False, with_label=False,class_names=map_classes),
+    dict(type='CustomCollect3D', keys=['img', 'gt_depth', 'points'])
 ]
 
 test_pipeline = [
-    dict(type="LoadMultiViewImageFromFiles", to_float32=True),
-    dict(type="RandomScaleImageMultiViewImage", scales=[0.5]),
-    dict(type="NormalizeMultiviewImage", **img_norm_cfg),
+    dict(type='LoadMultiViewImageFromFiles', to_float32=True),
+    dict(type='RandomScaleImageMultiViewImage', scales=[0.5]),
+    dict(type='NormalizeMultiviewImage', **img_norm_cfg),
+    dict(type='CustomLoadPointsFromFile', coord_type='LIDAR', load_dim=load_dim, use_dim=use_dim, reduce_beams=reduce_beams),
+    dict(type='CustomLoadPointsFromMultiSweeps', sweeps_num=9, load_dim=load_dim, use_dim=use_dim, reduce_beams=reduce_beams, pad_empty_sweeps=True, remove_close=True),
+    dict(type='CustomPointsRangeFilter', point_cloud_range=lidar_point_cloud_range),
     dict(
-        type="MultiScaleFlipAug3D",
+        type='MultiScaleFlipAug3D',
         img_scale=(1600, 900),
         pts_scale_ratio=1,
         flip=False,
         transforms=[
-            dict(type="PadMultiViewImage", size_divisor=32),
+            dict(type='PadMultiViewImage', size_divisor=32),
             dict(
-                type="DefaultFormatBundle3D",
-                with_gt=False,
+                type='DefaultFormatBundle3D', 
+                with_gt=False, 
                 with_label=False,
-                class_names=map_classes,
-            ),
-            dict(type="CustomCollect3D", keys=["img"]),
-        ],
-    ),
+                class_names=map_classes),
+            dict(type='CustomCollect3D', keys=['img', 'points'])
+        ])
 ]
 
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=2,
     workers_per_gpu=4,
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_train.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_train.pkl",
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -365,8 +396,9 @@ data = dict(
     val=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_val.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_val.pkl",
         map_ann_file=data_root + "nuscenes_mask2map_anns_val.json",
+        # map_ann_file=data_root + 'nuscenes_map_anns_val.json',
         pipeline=test_pipeline,
         bev_size=(bev_h_, bev_w_),
         pc_range=point_cloud_range,
@@ -381,8 +413,9 @@ data = dict(
     test=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_val.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_val.pkl",
         map_ann_file=data_root + "nuscenes_mask2map_anns_val.json",
+        # map_ann_file=data_root + 'nuscenes_map_anns_val.json',
         pipeline=test_pipeline,
         bev_size=(bev_h_, bev_w_),
         pc_range=point_cloud_range,
@@ -414,11 +447,10 @@ lr_config = dict(
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
     min_lr_ratio=1e-3)
-total_epochs = 55
+total_epochs = 12
+
 evaluation = dict(interval=2, pipeline=test_pipeline, metric='chamfer',
                   save_best='NuscMap_chamfer/mAP', rule='greater')
-# total_epochs = 50
-# evaluation = dict(interval=1, pipeline=test_pipeline)
 
 runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 

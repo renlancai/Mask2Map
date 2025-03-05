@@ -244,7 +244,7 @@ class Mask2MapHead_2Phase(DETRHead):
     # @auto_fp16(apply_to=('mlvl_feats'))
     @force_fp32(apply_to=("mlvl_feats", "prev_bev"))
     def forward(self, mlvl_feats, lidar_feat, img_metas, prev_bev=None, only_bev=False):
-        """Forward function.
+        """
         Args:
             mlvl_feats (tuple[Tensor]): Features from the upstream
                 network, each is a 5D-tensor with shape
@@ -1449,7 +1449,7 @@ class Mask2MapHead_2Phase(DETRHead):
         return loss_dict
 
     @force_fp32(apply_to=("preds_dicts"))
-    def get_bboxes(self, preds_dicts, img_metas, rescale=False):
+    def get_bboxes(self, preds_dicts, img_metas, rescale=False): #when inference, set to: rescale = True, why?
         """Generate bboxes from bbox head predictions.
         Args:
             preds_dicts (tuple[list[dict]]): Prediction results.

@@ -85,13 +85,13 @@ class Mask2Map(MVXTwoStageDetector):
                 img = img.reshape(B * N, C, H, W)
             if self.use_grid_mask:
                 img = self.grid_mask(img)
-            img_feats = self.img_backbone(img)
+            img_feats = self.img_backbone(img) # input: tensor, output: dict
             if isinstance(img_feats, dict):
                 img_feats = list(img_feats.values())
         else:
             return None
         if self.with_img_neck:
-            img_feats = self.img_neck(img_feats)
+            img_feats = self.img_neck(img_feats) #input:list, out:tuple
 
         img_feats_reshaped = []
         for img_feat in img_feats:
@@ -338,8 +338,13 @@ class Mask2Map(MVXTwoStageDetector):
         else:
             img_metas[0][0]["can_bus"][-1] = 0
             img_metas[0][0]["can_bus"][:3] = 0
-
-        new_prev_bev, bbox_results = self.simple_test(img_metas[0], img[0], points[0], prev_bev=self.prev_frame_info["prev_bev"], **kwargs)
+        
+        # img_metas is a list
+        # img_metas[0] is a list containing a dict to represent the meta information of the first sample
+        # print(img_metas[0][0])
+        
+        new_prev_bev, bbox_results = self.simple_test(img_metas[0], img[0], points[0], \
+                                    prev_bev=self.prev_frame_info["prev_bev"], **kwargs)
         # During inference, we save the BEV features and ego motion of each timestamp.
         self.prev_frame_info["prev_pos"] = tmp_pos
         self.prev_frame_info["prev_angle"] = tmp_angle
@@ -411,7 +416,7 @@ class Mask2Map(MVXTwoStageDetector):
         """Test function"""
         outs = self.pts_bbox_head(x, lidar_feat, img_metas, prev_bev=prev_bev)
 
-        bbox_list = self.pts_bbox_head.get_bboxes(outs, img_metas, rescale=rescale)
+        bbox_list = self.pts_bbox_head.get_bboxes(outs, img_metas, rescale=rescale) # why we need rescale be True?
         if len(bbox_list[0]) == 5:
             bbox_results = [self.pred2result_dist(bboxes, scores, labels, pts, pts_cls) for bboxes, scores, labels, pts, pts_cls in bbox_list]
         else:
@@ -423,8 +428,8 @@ class Mask2Map(MVXTwoStageDetector):
         lidar_feat = None
         if self.modality == "fusion":
             lidar_feat = self.extract_lidar_feat(points)
-        img_feats = self.extract_feat(img=img, img_metas=img_metas)
-
+        img_feats = self.extract_feat(img=img, img_metas=img_metas) # without using img_metas
+                
         bbox_list = [dict() for i in range(len(img_metas))]
         new_prev_bev, bbox_pts = self.simple_test_pts(img_feats, lidar_feat, img_metas, prev_bev, rescale=rescale)
         for result_dict, pts_bbox in zip(bbox_list, bbox_pts):

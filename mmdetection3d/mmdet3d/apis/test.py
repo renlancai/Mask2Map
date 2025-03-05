@@ -3,6 +3,8 @@ import mmcv
 import torch
 from mmcv.image import tensor2imgs
 from os import path as osp
+from mmcv.runner import get_dist_info
+import numpy as np
 
 from mmdet3d.models import (Base3DDetector, Base3DSegmentor,
                             SingleStageMono3DDetector)
@@ -82,3 +84,54 @@ def single_gpu_test(model,
         for _ in range(batch_size):
             prog_bar.update()
     return results
+
+
+def single_gpu_test_onnx(model,
+                    data_loader,
+                    show=False,
+                    out_dir=None,
+                    show_score_thr=0.3):
+    #
+    model.eval()
+    bbox_results = []
+    mask_results = []
+    dataset = data_loader.dataset
+    rank, world_size = get_dist_info()
+    if rank == 0:
+        prog_bar = mmcv.ProgressBar(len(dataset))
+    
+    # import time
+    # time.sleep(2)  # This line can prevent deadlock problem in some cases.
+    have_mask = False
+    
+    repetitions = 100
+    for i, data in enumerate(data_loader):
+        if (i > 10):
+            break
+        print(data[0])
+    
+        with torch.no_grad():
+            inputs = {}
+            inputs['img'] = data['img'][0].data[0].float().unsqueeze(0) #torch.randn(6,3,736,1280)#.cuda()
+            #inputs['return_loss'] = False
+            inputs['img_metas'] = [1]
+            inputs['img_metas'][0] = [1]
+            inputs['img_metas'][0][0] = {}
+            inputs['img_metas'][0][0]['can_bus'] = torch.from_numpy(data['img_metas'][0].data[0][0]['can_bus']).float()#torch.randn(18)#.cuda()
+            inputs['img_metas'][0][0]['lidar2img'] = torch.from_numpy(np.array(data['img_metas'][0].data[0][0]['lidar2img'])).float().unsqueeze(0)#torch.randn(1,6,4,4)#.cuda()
+            inputs['img_metas'][0][0]['scene_token'] = 'fcbccedd61424f1b85dcbf8f897f9754'
+            inputs['img_metas'][0][0]['img_shape'] = torch.Tensor([[480,800]]) 
+            output_file = 'ckpts/v299_110epoch.onnx'
+            torch.onnx.export(
+                model.module,
+                inputs,
+                output_file,
+                export_params=True,
+                keep_initializers_as_inputs=True,
+                do_constant_folding=False,
+                verbose=True,
+                opset_version=11,
+            )
+ 
+            print(f"ONNX file has been saved in {output_file}")
+            return {0:'1'}

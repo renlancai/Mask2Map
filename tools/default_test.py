@@ -34,14 +34,12 @@ warnings.filterwarnings('ignore', category=UserWarning, module='module_name')
 def parse_args():
     parser = argparse.ArgumentParser(
         description='MMDet test (and eval) a model')
-    parser.add_argument('config', help='test config file path')
-    parser.add_argument('checkpoint', help='checkpoint file')
-    
-    # parser.add_argument('--config', help='test config file path',
-    #                     default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep.py')
-    # parser.add_argument('--checkpoint', help='checkpoint file',
-    #                     default='ckpts/v299_fusion_55_simple-df3eb7e5.pth')
-    
+    # parser.add_argument('config', help='test config file path')
+    # parser.add_argument('checkpoint', help='checkpoint file')
+    parser.add_argument('--config', help='test config file path',
+                        default='projects/configs/mask2map/M2M_nusc_v299_full_2Phase_55n55ep.py')
+    parser.add_argument('--checkpoint', help='checkpoint file',
+                        default='ckpts/v299_110e-df3eb7e5.pth')
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(
         '--fuse-conv-bn',
@@ -64,7 +62,6 @@ def parse_args():
     parser.add_argument('--show', action='store_true', help='show results')
     parser.add_argument(
         '--show-dir', help='directory where results will be saved')
-    
     parser.add_argument(
         '--gpu-collect',
         action='store_true',
