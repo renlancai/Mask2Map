@@ -365,7 +365,9 @@ class BEVDecoder(nn.Module):
         
         bs = mlvl_feats[0].size(0)
         
+        device = mlvl_feats[0].device
         num_vec = self.num_vec_one2one
+        
         self_attn_mask = torch.zeros((num_vec, num_vec), dtype=torch.float32, device=device)
         self_attn_mask[self.num_vec_one2one:, :self.num_vec_one2one] = 1.0
         self_attn_mask[:self.num_vec_one2one, self.num_vec_one2one:] = 1.0
@@ -584,10 +586,10 @@ class BEVDecoder(nn.Module):
             "debug": self.debug,
         }
 
-        return self.get_bboxes(outs, img_metas)
+        return self.get_bboxes_whole(outs, img_metas)
     
     @force_fp32(apply_to=("preds_dicts"))
-    def get_bboxes(self, preds_dicts, img_metas):
+    def get_bboxes_whole(self, preds_dicts, img_metas):
         # bboxes: xmin, ymin, xmax, ymax
         preds_dicts = self.model.bbox_coder.decode(preds_dicts)
 

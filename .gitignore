@@ -166,3 +166,7 @@ ckpts*
 logs*
 data*
 onnx*
+nohup*
+*.mp4
+all_pic*
+code_bak*

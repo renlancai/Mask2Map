@@ -60,10 +60,15 @@ def parse_args():
     #                     default='ckpts/v299_110e-df3eb7e5.pth')
     
     # v2-99 images and points
+    # parser.add_argument('--config', help='test config file path',
+    #                     default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
+    # parser.add_argument('--checkpoint', help='checkpoint file',
+    #                     default='ckpts/v299_fusion-b0c02deb.pth')
+    # ResetNet50 images only
     parser.add_argument('--config', help='test config file path',
-                        default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
+                        default='projects/configs/mask2map/M2M_nusc_r50_full_2Phase_12n12ep.py')
     parser.add_argument('--checkpoint', help='checkpoint file',
-                        default='ckpts/v299_fusion-b0c02deb.pth')
+                        default='ckpts/r50_phase2.pth')
     
     parser.add_argument('--score-thresh', default=0.4, type=float, help='samples to visualize')
     
@@ -386,7 +391,7 @@ def main():
                 img=images_data, img_metas=img_metas, len_queue=None)
             
             # step 2:
-            lidar_feat = raw_model.extract_lidar_feat([points])
+            # lidar_feat = raw_model.extract_lidar_feat([points])
             
             # step 3:
             new_prev_bev, bbox_pts = raw_model.simple_test_pts(
@@ -400,9 +405,19 @@ def main():
                 result_dict["pts_bbox"] = pts_bbox
             depart_results.extend(bbox_list)
             
+            ###### way2 :feed raw images to the raw_model, good
+            # # NOTIC: images_data shape would be changed if called with extract_img_feat() before
+            # _, bbox_list = raw_model.simple_test( # torch.Size([1, 6, 3, 480, 800])
+            #     [img_metas], 
+            #     images_data,
+            #     [points],
+            #     prev_bev=None,
+            #     rescale=True)
+            # depart_results.extend(bbox_list)
+            
             prog_bar.update()
             
-            # visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
+            visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
 
     # you can add the evaluate code here to get mAP data
     do_eval = True

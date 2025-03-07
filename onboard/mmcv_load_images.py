@@ -12,6 +12,90 @@ import shutil
 from pathlib import Path
 import os.path as osp
 
+import os
+import struct
+from typing import List, NamedTuple
+
+class Point(NamedTuple):
+    x: float
+    y: float
+    z: float
+    intensity: float
+    ring: float
+
+# point_cloud_range = [-15.0, -30.0, -10.0, 15.0, 30.0, 10.0]
+class PointFiletr:
+    def __init__(self, point_cloud_range, close_radius=0.5):
+        self.point_cloud_range = point_cloud_range
+        self.close_radius = close_radius
+    
+    def __call__(self, point: Point):
+        return self.filter(point)
+    
+    def filter(self, point: Point):
+        x, y, z, _, _ = point
+        if x < self.point_cloud_range[0] or x > self.point_cloud_range[3] or \
+            y < self.point_cloud_range[1] or y > self.point_cloud_range[4] or \
+            z < self.point_cloud_range[2] or z > self.point_cloud_range[5]:
+            return None
+        if self.close_radius is not None and np.sqrt(x ** 2 + y ** 2) < self.close_radius:
+            return None
+        return point
+
+
+class PointTransoform:
+    def __init__(self, transform=None):
+        self.transform = transform
+    
+    def __call__(self, point: Point):
+        if self.transform is not None:
+            point[:3] = point[:3] @ self.transform['rotation']
+            point[:3] += self.transform['translation']
+        return point
+
+
+def load_nuscenes_lidar(path: str) -> List[Point]:
+    if not os.path.exists(path):
+        raise RuntimeError(f"Failed to open file: {path}")
+
+    with open(path, 'rb') as f:
+        file_size = os.path.getsize(path)
+        if file_size % struct.calcsize('4f') != 0:
+            raise RuntimeError("Invalid file size")
+        
+        buffer = f.read()
+        num_points = file_size // struct.calcsize('5f')
+        points = [
+            Point._make(struct.unpack_from('5f', buffer, offset=i * 16))
+            for i in range(num_points)
+        ]
+    
+    return points
+
+def load_lidar_with_filter_and_transform(path, filter=None, transform=None):
+    # print(path)
+    if not os.path.exists(path):
+        raise RuntimeError(f"Failed to open file: {path}")
+
+    points = []
+    with open(path, 'rb') as f:
+        file_size = os.path.getsize(path)
+        if file_size % struct.calcsize('5f') != 0:
+            raise RuntimeError("Invalid file size")
+        
+        buffer = f.read()
+        num_points = file_size // struct.calcsize('5f')
+        for i in range(num_points):
+            point = Point._make(struct.unpack_from('5f', buffer, offset=i * 16))
+            if filter is not None:
+                point = filter(point)
+            if transform is not None and point is not None:
+                point = transform(point)
+            if point is not None:
+                points.append([point.x, point.y, point.z, point.intensity, point.ring])
+    
+    return points
+
 def mmcv_load_images(nuscense_data_root, frame_images_data, lidar2img):
     cams_name = [
         "CAM_FRONT",
@@ -303,6 +387,7 @@ def visualize_results(data, pc_range, result, args, out_dir):
         plt.xlim(pc_range[0], pc_range[3])
         plt.ylim(pc_range[1], pc_range[4])
         plt.axis('off')
+        
         for pred_score_3d, pred_bbox_3d, pred_label_3d, pred_pts_3d in zip(scores_3d[keep], boxes_3d[keep],labels_3d[keep], pts_3d[keep]):
 
             pred_pts_3d = pred_pts_3d.numpy()

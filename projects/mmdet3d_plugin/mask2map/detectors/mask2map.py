@@ -230,13 +230,27 @@ class Mask2Map(MVXTwoStageDetector):
         return feats, coords, sizes
 
     @auto_fp16(apply_to=("points"), out_fp32=True)
+    def extract_pts_feat(self, pts):
+        """Extract features of points."""
+        voxels, coors, num_points = self.voxelize(pts)
+
+        voxel_features = self.pts_voxel_encoder(voxels, num_points, coors)
+        batch_size = coors[-1, 0] + 1
+        lidar_feat = self.pts_middle_encoder(voxel_features, coors, batch_size)
+        lidar_feat = self.pts_backbone(lidar_feat)
+        if self.with_pts_neck:
+            lidar_feat = self.pts_neck(lidar_feat)
+        return lidar_feat
+
+    @auto_fp16(apply_to=("points"), out_fp32=True)
     def extract_lidar_feat(self, points):
         feats, coords, sizes = self.voxelize(points)
-        # voxel_features = self.lidar_modal_extractor["voxel_encoder"](feats, sizes, coords)
         batch_size = coords[-1, 0] + 1
         lidar_feat = self.lidar_modal_extractor["backbone"](feats, coords, batch_size, sizes=sizes)
-
         return lidar_feat
+    
+        # lidar_feat_other = self.extract_pts_feat(points)
+        # return lidar_feat_other
 
     # @auto_fp16(apply_to=('img', 'points'))
     @force_fp32(apply_to=("img", "points", "prev_bev"))

@@ -367,7 +367,8 @@ def obtain_vectormap(nusc_maps, map_explorer, info, point_cloud_range):
     patch_h = point_cloud_range[4]-point_cloud_range[1]
     patch_w = point_cloud_range[3]-point_cloud_range[0]
     patch_size = (patch_h, patch_w)
-    vector_map = VectorizedLocalMap(nusc_maps[location], map_explorer[location],patch_size)
+    
+    vector_map = VectorizedLocalMap(nusc_maps[location], map_explorer[location], patch_size)
     map_anns = vector_map.gen_vectorized_samples(lidar2global_translation, lidar2global_rotation)
     # import ipdb;ipdb.set_trace()
     info["annotation"] = map_anns
@@ -515,7 +516,7 @@ class VectorizedLocalMap(object):
         records = getattr(self.map_explorer.map_api, layer_name)
 
         polygon_list = []
-        if layer_name == 'drivable_area':
+        if layer_name == 'drivable_area': # ['road_segment', 'lane']
             for record in records:
                 polygons = [self.map_explorer.map_api.extract_polygon(polygon_token) for polygon_token in record['polygon_tokens']]
 
@@ -548,7 +549,7 @@ class VectorizedLocalMap(object):
         return polygon_list
 
 
-    def get_ped_crossing_line(self, patch_box, patch_angle):
+    def get_ped_crossing_line(self, patch_box, patch_angle): #['ped_crossing']
         patch_x = patch_box[0]
         patch_y = patch_box[1]
 
@@ -774,6 +775,7 @@ def create_nuscenes_infos(root_path,
     from nuscenes.nuscenes import NuScenes
     from nuscenes.can_bus.can_bus_api import NuScenesCanBus
     print(version, root_path)
+    
     nusc = NuScenes(version=version, dataroot=root_path, verbose=True)
     nusc_can_bus = NuScenesCanBus(dataroot=can_bus_root_path)
     MAPS = ['boston-seaport', 'singapore-hollandvillage',
@@ -788,10 +790,10 @@ def create_nuscenes_infos(root_path,
     from nuscenes.utils import splits
     available_vers = ['v1.0-trainval', 'v1.0-test', 'v1.0-mini']
     assert version in available_vers
-    if version == 'v1.0-trainval':
+    if version == 'v1.0-trainval': #run
         train_scenes = splits.train
         val_scenes = splits.val
-    elif version == 'v1.0-test':
+    elif version == 'v1.0-test': #run
         train_scenes = splits.test
         val_scenes = []
     elif version == 'v1.0-mini':
@@ -933,6 +935,7 @@ if __name__ == '__main__':
         dataset_name='NuScenesDataset',
         out_dir=args.out_dir,
         max_sweeps=args.max_sweeps)
+    
     test_version = f'{args.version}-test'
     nuscenes_data_prep(
         root_path=args.root_path,

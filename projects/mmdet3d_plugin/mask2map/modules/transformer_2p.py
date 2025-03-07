@@ -25,18 +25,7 @@ def get_line():
     # 获取调用者的帧信息（f_back）
     frame = inspect.currentframe().f_back
     return frame.f_lineno
- 
-def getxxxxxx():
-    # 获取当前帧信息
-    frame = inspect.currentframe()
-    # 获取调用者的帧信息
-    caller_frame = inspect.getouterframes(frame)[1]
-    # 获取文件名
-    filename = inspect.getfile(caller_frame[0])
-    # 获取行号
-    line_number = caller_frame.lineno
-    return filename, line_number
- 
+
 
 def log_device(data,  line_number):
     if isinstance(data, list):
@@ -835,7 +824,7 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
             # if a mask is all True(all background), then set it all False.
             mask_sum = (attn_mask.sum(-1) != attn_mask.shape[-1]).unsqueeze(-1)
             attn_mask = attn_mask & mask_sum
-            log_device(attn_mask, get_line())
+            # log_device(attn_mask, get_line())
             # cross_attn + self_attn
             layer = self.segm_decoder.layers[i]
             instance_query_feat = layer(

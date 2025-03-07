@@ -1258,7 +1258,7 @@ class CustomNuScenesOfflineLocalMapDataset(CustomNuScenesDataset):
         anns_results = self.vector_map.gen_vectorized_samples(
             input_dict["annotation"] if "annotation" in input_dict.keys() else input_dict["ann_info"],
             example=example,
-            feat_down_sample=self.aux_seg["feat_down_sample"],
+            feat_down_sample=self.aux_seg["feat_down_sample"], #feat_down_sample = 32
         )
 
         """

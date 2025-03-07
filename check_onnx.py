@@ -1,5 +1,6 @@
 import argparse
 import onnx
+import onnxsim
 
 def parse_args():
     parser = argparse.ArgumentParser(description='check onnx file')
@@ -16,6 +17,11 @@ def main():
     print(onnxfile)
     print(onnx_model)
     onnx.checker.check_model(onnx_model)
+    #print(onnx.helper.printable_graph(onnx_model.graph))
+    #
+    model_onnx, check = onnxsim.simplify(onnx_model, check_n=3, skip_shape_inference=True)
+    assert check, 'assert check failed'
+    onnx.save(model_onnx, onnxfile + ".simplified")
 
 
 if __name__ == '__main__':
