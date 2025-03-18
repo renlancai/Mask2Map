@@ -9,9 +9,7 @@ from mmdet3d.ops import Voxelization, DynamicScatter
 from mmcv.utils import TORCH_VERSION, digit_version
 from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
 from projects.mmdet3d_plugin.models.utils.grid_mask import GridMask
-from projects.mmdet3d_plugin.mask2map.detectors.lidar_backbone import LidarConvFeatureExtractor
 
-import pdb
 
 @DETECTORS.register_module()
 class Mask2Map(MVXTwoStageDetector):
@@ -76,15 +74,6 @@ class Mask2Map(MVXTwoStageDetector):
             )
             self.voxelize_reduce = lidar_encoder.get("voxelize_reduce", True)
 
-        ####
-        self.lite_lidar_backbone = LidarConvFeatureExtractor(
-            in_channels=64,
-            base_dim=64,
-            output_dim=256,
-            num_blocks=[2,2,2,2],
-            init_type='kaiming'
-        )
- 
     def extract_img_feat(self, img, img_metas, len_queue=None):
         """Extract features of images."""
         B = img.size(0)
@@ -214,8 +203,7 @@ class Mask2Map(MVXTwoStageDetector):
 
     @torch.no_grad()
     @force_fp32()
-    def new_voxelize(self, points):
-        # pdb.set_trace()
+    def voxelize(self, points):
         feats, coords, sizes = [], [], []
         for k, res in enumerate(points):
             ret = self.lidar_modal_extractor["voxelize"](res)
@@ -242,35 +230,13 @@ class Mask2Map(MVXTwoStageDetector):
         return feats, coords, sizes
 
     @auto_fp16(apply_to=("points"), out_fp32=True)
-    def extract_pts_feat(self, pts):
-        """Extract features of points."""
-        # pdb.set_trace()
-        voxels_list, coors_list, num_points_list, lidar_features_list = [], [], [], []
-        for res in pts:
-            voxels, num_points, coors = self.voxelize([res])
-            # if len(num_points) > 0 and self.voxelize_reduce:
-            #     voxels = voxels.sum(dim=1, keepdim=False) / num_points.type_as(voxels).view(-1, 1)
-            #     voxels = voxels.contiguous()
-            voxel_features = self.pts_voxel_encoder(voxels, num_points, coors)
-            lidar_feat = self.pts_middle_encoder(voxel_features, coors)
-            lidar_features_list.append(lidar_feat[0])
-
-        # pdb.set_trace()
-        lidar_feat = torch.cat(lidar_features_list, dim=0)
-        lidar_feat = self.lite_lidar_backbone(lidar_feat)
-        return lidar_feat
-
-
-    @auto_fp16(apply_to=("points"), out_fp32=True)
     def extract_lidar_feat(self, points):
-        # feats, coords, sizes = self.new_voxelize(points)
-        # batch_size = coords[-1, 0] + 1
-        # lidar_feat = self.lidar_modal_extractor["backbone"](feats, coords, batch_size, sizes=sizes)
-        
-        lidar_feat_other = self.extract_pts_feat(points)
-        fuse_lidar = lidar_feat_other
-        
-        return fuse_lidar
+        feats, coords, sizes = self.voxelize(points)
+        # voxel_features = self.lidar_modal_extractor["voxel_encoder"](feats, sizes, coords)
+        batch_size = coords[-1, 0] + 1
+        lidar_feat = self.lidar_modal_extractor["backbone"](feats, coords, batch_size, sizes=sizes)
+
+        return lidar_feat
 
     # @auto_fp16(apply_to=('img', 'points'))
     @force_fp32(apply_to=("img", "points", "prev_bev"))

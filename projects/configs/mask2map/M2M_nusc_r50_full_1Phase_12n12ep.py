@@ -63,7 +63,7 @@ dn_enabled = True
 
 aux_seg_cfg = dict(
     use_aux_seg=True,
-    bev_seg=False,
+    bev_seg=True,
     pv_seg=True,
     seg_classes=1,
     feat_down_sample=32,
@@ -74,7 +74,8 @@ model = dict(
     type="Mask2Map",
     use_grid_mask=True,
     video_test_mode=False,
-    pretrained=dict(img="ckpts/sparsebev_resnet.pth"),
+    # pretrained=dict(img="ckpts/sparsebev_resnet.pth"),
+    pretrained=dict(img="ckpts/resnet50-19c8e357.pth"),
     img_backbone=dict(
         type="ResNet",
         depth=50,
@@ -153,7 +154,7 @@ model = dict(
                 ),
                 positional_encoding=dict(num_feats=128, normalize=True),
             ),
-            encoder=dict(
+            encoder=dict( # 2D-3D bev
                 type="LSSTransform",
                 in_channels=_dim_,
                 out_channels=_dim_,
@@ -304,12 +305,12 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=8,
     workers_per_gpu=4,
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_train.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_train.pkl",
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -329,7 +330,7 @@ data = dict(
     val=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_val.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_val.pkl",
         map_ann_file=data_root + "nuscenes_mask2map_anns_val.json",
         pipeline=test_pipeline,
         bev_size=(bev_h_, bev_w_),
@@ -345,7 +346,7 @@ data = dict(
     test=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_val.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_val.pkl",
         map_ann_file=data_root + "nuscenes_mask2map_anns_val.json",
         pipeline=test_pipeline,
         bev_size=(bev_h_, bev_w_),

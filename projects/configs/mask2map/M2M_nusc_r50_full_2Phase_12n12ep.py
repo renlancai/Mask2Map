@@ -67,7 +67,7 @@ dn_enabled = True
 
 aux_seg_cfg = dict(
     use_aux_seg=True,
-    bev_seg=False,
+    bev_seg=True,
     pv_seg=True,
     seg_classes=1,
     feat_down_sample=32,
@@ -81,7 +81,8 @@ model = dict(
     type="Mask2Map",
     use_grid_mask=True,
     video_test_mode=False,
-    pretrained=dict(img="ckpts/sparsebev_resnet.pth"),
+    # pretrained=dict(img="ckpts/sparsebev_resnet.pth"),
+    pretrained=dict(img="ckpts/resnet50-19c8e357.pth"),
     img_backbone=dict(
         type="ResNet",
         depth=50,
@@ -129,7 +130,7 @@ model = dict(
             dn_enabled=dn_enabled,
             dn_group_num=5,
             dn_noise_scale=0.01,
-            thresh_of_mask_for_pos=0.3,
+            thresh_of_mask_for_pos=0.3, # for instance pos_embed mask threshold
             mask_noise_scale=0.1,
             pts2mask_noise_scale=0.1,
             num_vec_one2one=num_vec,
@@ -183,10 +184,16 @@ model = dict(
                 num_layers=3,
                 layer_cfg=dict(  # Mask2FormerTransformerDecoderLayer
                     self_attn_cfg=dict(
-                        embed_dims=256, num_heads=8, dropout=0.0, batch_first=True
+                        embed_dims=256,
+                        num_heads=8,
+                        dropout=0.0,
+                        batch_first=True
                     ),  # MultiheadAttention
                     cross_attn_cfg=dict(
-                        embed_dims=256, num_heads=8, dropout=0.0, batch_first=True
+                        embed_dims=256,
+                        num_heads=8,
+                        dropout=0.0,
+                        batch_first=True
                     ),  # MultiheadAttention
                     ffn_cfg=dict(
                         embed_dims=256,
@@ -241,7 +248,13 @@ model = dict(
             row_num_embed=bev_h_,
             col_num_embed=bev_w_,
         ),
-        loss_cls=dict(type="FocalLoss", use_sigmoid=True, gamma=2.0, alpha=0.25, loss_weight=2.0),
+        loss_cls=dict(
+            type="FocalLoss",
+            use_sigmoid=True,
+            gamma=2.0,
+            alpha=0.25,
+            loss_weight=2.0,
+        ),
         loss_bbox=dict(type="L1Loss", loss_weight=0.0),
         loss_iou=dict(type="GIoULoss", loss_weight=0.0),
         loss_pts=dict(type="PtsL1Loss", loss_weight=5.0),
@@ -256,7 +269,10 @@ model = dict(
             class_weight=[1.0] * len(map_classes) + [0.1],
         ),
         loss_segm_mask=dict(
-            type="CrossEntropyLoss", use_sigmoid=True, reduction="mean", loss_weight=5.0
+            type="CrossEntropyLoss",
+            use_sigmoid=True,
+            reduction="mean",
+            loss_weight=5.0,
         ),
         loss_segm_dice=dict(
             type="DiceLoss",
@@ -339,12 +355,12 @@ test_pipeline = [
 ]
 
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=8,
     workers_per_gpu=4,
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_train.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_train.pkl",
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -364,7 +380,7 @@ data = dict(
     val=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_val.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_val.pkl",
         map_ann_file=data_root + "nuscenes_mask2map_anns_val.json",
         pipeline=test_pipeline,
         bev_size=(bev_h_, bev_w_),
@@ -380,7 +396,7 @@ data = dict(
     test=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + "nuscenes_maptrv2_temporal_val.pkl",
+        ann_file=data_root + "nuscenes_map_infos_temporal_val.pkl",
         map_ann_file=data_root + "nuscenes_mask2map_anns_val.json",
         pipeline=test_pipeline,
         bev_size=(bev_h_, bev_w_),
