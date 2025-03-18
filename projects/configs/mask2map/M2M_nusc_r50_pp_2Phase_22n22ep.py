@@ -89,32 +89,32 @@ model = dict(
     use_grid_mask=True,
     video_test_mode=False,
     modality=modality,
-    pts_voxel_encoder=dict(
-        type='PillarFeatureNet',
-        in_channels=5,
-        feat_channels=[64],
-        with_distance=False,
-        voxel_size=lidar_voxel_size,
-        point_cloud_range=lidar_point_cloud_range),
-    pts_middle_encoder=dict(
-        type='PointPillarsScatter',
-        in_channels=64,
-        output_shape=[450, 900]),# 300 * 600 * 1
-    pts_backbone=dict(
-        type='SECOND',
-        in_channels=64,
-        norm_cfg=dict(type='naiveSyncBN2d', eps=1e-3, momentum=0.01),
-        layer_nums=[3, 5, 5],
-        layer_strides=[2, 2, 2],
-        out_channels=[64, 128, 256]),
-    pts_neck=dict(
-        type='mmdet.FPN',
-        norm_cfg=dict(type='naiveSyncBN2d', eps=1e-3, momentum=0.01),
-        act_cfg=dict(type='ReLU'),
-        in_channels=[64, 128, 256],
-        out_channels=_dim_,
-        start_level=0,
-        num_outs=3),
+    # pts_voxel_encoder=dict(
+    #     type='PillarFeatureNet',
+    #     in_channels=5,
+    #     feat_channels=[64],
+    #     with_distance=False,
+    #     voxel_size=lidar_voxel_size,
+    #     point_cloud_range=lidar_point_cloud_range),
+    # pts_middle_encoder=dict(
+    #     type='PointPillarsScatter',
+    #     in_channels=64,
+    #     output_shape=[450, 900]),# 300 * 600 * 1
+    # pts_backbone=dict(
+    #     type='SECOND',
+    #     in_channels=64,
+    #     norm_cfg=dict(type='naiveSyncBN2d', eps=1e-3, momentum=0.01),
+    #     layer_nums=[3, 5, 5],
+    #     layer_strides=[2, 2, 2],
+    #     out_channels=[64, 128, 256]),
+    # pts_neck=dict(
+    #     type='mmdet.FPN',
+    #     norm_cfg=dict(type='naiveSyncBN2d', eps=1e-3, momentum=0.01),
+    #     act_cfg=dict(type='ReLU'),
+    #     in_channels=[64, 128, 256],
+    #     out_channels=_dim_,
+    #     start_level=0,
+    #     num_outs=3),
     lidar_encoder=dict(
         voxelize=dict(
             max_num_points=10,

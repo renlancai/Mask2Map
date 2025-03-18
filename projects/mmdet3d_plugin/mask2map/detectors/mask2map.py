@@ -76,14 +76,13 @@ class Mask2Map(MVXTwoStageDetector):
             )
             self.voxelize_reduce = lidar_encoder.get("voxelize_reduce", True)
 
-        ####
-        self.lite_lidar_backbone = LidarConvFeatureExtractor(
-            in_channels=64,
-            base_dim=64,
-            output_dim=256,
-            num_blocks=[2,2,2,2],
-            init_type='kaiming'
-        )
+        # self.lite_lidar_backbone = LidarConvFeatureExtractor(
+        #     in_channels=64,
+        #     base_dim=64,
+        #     output_dim=256,
+        #     num_blocks=[2,2,2,2],
+        #     init_type='kaiming'
+        # )
  
     def extract_img_feat(self, img, img_metas, len_queue=None):
         """Extract features of images."""
@@ -263,12 +262,12 @@ class Mask2Map(MVXTwoStageDetector):
 
     @auto_fp16(apply_to=("points"), out_fp32=True)
     def extract_lidar_feat(self, points):
-        # feats, coords, sizes = self.new_voxelize(points)
-        # batch_size = coords[-1, 0] + 1
-        # lidar_feat = self.lidar_modal_extractor["backbone"](feats, coords, batch_size, sizes=sizes)
+        feats, coords, sizes = self.new_voxelize(points)
+        batch_size = coords[-1, 0] + 1
+        fuse_lidar = self.lidar_modal_extractor["backbone"](feats, coords, batch_size, sizes=sizes)
         
-        lidar_feat_other = self.extract_pts_feat(points)
-        fuse_lidar = lidar_feat_other
+        # lidar_feat_other = self.extract_pts_feat(points)
+        # fuse_lidar = lidar_feat_other
         
         return fuse_lidar
 
