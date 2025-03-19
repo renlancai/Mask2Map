@@ -4,7 +4,7 @@ _base_ = [
 
 work_dir = None
 # resume_from = "./work_dirs/M2M_nusc_r50_full_fusion_2Phase_22n22ep/epoch_12.pth"
-load_from = "./work_dirs/M2M_nusc_r50_full_fusion_1Phase_22n22ep/latest.pth"
+load_from = "./work_dirs/M2M_nusc_r50_pp_1Phase_22n22ep/latest.pth"
 resume_optimizer = False
 
 #
