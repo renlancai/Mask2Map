@@ -795,11 +795,12 @@ def main():
             depart_results.extend(bbox_list)
             
             prog_bar.update()
-            visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
-        
+            # visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
+        if i > 100:
+            break
     # you can add the evaluate code here to get mAP data
     do_eval = True
-    if do_eval and len(depart_results) > 5000:
+    if do_eval and len(depart_results) > 5:
         kwargs = {} if args.eval_options is None else args.eval_options
         kwargs['jsonfile_prefix'] = osp.join('test', args.config.split(
             '/')[-1].split('.')[-2], time.ctime().replace(' ', '_').replace(':', '_'))

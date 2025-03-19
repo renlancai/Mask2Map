@@ -63,7 +63,7 @@ dn_enabled = True
 
 aux_seg_cfg = dict(
     use_aux_seg=True,
-    bev_seg=False,
+    bev_seg=True,
     pv_seg=True,
     seg_classes=1,
     feat_down_sample=32,

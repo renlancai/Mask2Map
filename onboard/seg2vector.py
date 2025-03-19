@@ -1,14 +1,3 @@
-# core implementation of the PyTorch inference engine
-# divide the whole model into multiple sub-modules(steps):
-# include:
-#    1. extract camera images features in PV, and ViewTransform to bev
-#    2. extract LiDAR point cloud features in BEV
-#    3. fusion the BEV features from LIDAR and camera and upsample to get multi-scale BEV feat
-#    4. extract the image features in 2D
-#    5. generate teh mask-aware queries
-#    6. fusion of PQG+GFE to get the final queries with input = [bev-seg-mask, mask-aware-queries]
-#    7. mask-guied map decoder to predict the final map elements
-
 import argparse
 import mmcv
 import os
@@ -46,6 +35,7 @@ from pathlib import Path
 import os.path as osp
 
 from mmcv_load_images import load_images, mmcv_load_images, visualize_results
+from mask2vector import bev_seg_to_vectors, sample_contour, compute_bbox
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -217,8 +207,6 @@ def main():
         wrap_fp16_model(model)
     checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
    
-    # ####dataloader & model inference type
-    
     # in case the test dataset is concatenated
     samples_per_gpu = 1
     if isinstance(cfg.data.test, dict):
@@ -238,6 +226,7 @@ def main():
                 ds_cfg.pipeline = replace_ImageToTensor(ds_cfg.pipeline)
     
     dataset = build_dataset(cfg.data.test)
+    # dataset = build_dataset(cfg.data.train)
     dataset.is_vis_on_test = True #TODO, this is a hack
     data_loader = build_dataloader(
         dataset,
@@ -267,162 +256,78 @@ def main():
     raw_results = []
     depart_results = []
     
-    prog_bar = mmcv.ProgressBar(len(dataset))
-    for i, data in enumerate(data_loader):
-        token = data['img_metas'][0].data[0][0]['sample_idx']
-        
-        # print(f'item:{i}  processing {token}')
-        if ~(data['gt_labels_3d'].data[0][0] != -1).any():
-            print(data['img_metas'][0].data[0][0]['sample_idx'])
-            logger.error(f'\n empty gt for index {i}, continue')
-            continue
-        
-        if  token not in token_files:
-            continue
-        
-        filename_stem = token_files[token]
-        filename_full = f"{test_data_root}/data/data_infos/samples_info/{filename_stem}.yaml"
-        # load only one data
-        frame_data = None
-        with open(filename_full, 'r') as file:
-            frame_data = yaml.load(file, Loader=yaml.FullLoader)
-        if (frame_data is None):
-            continue
-        
-        nuscense_data_root = test_data_root
+    config = {
+        'divider': 1,
+        'boundary': 2,
+        'ped_crossing': 3,
+        'min_area': {
+            'divider': 30,
+            'boundary': 50,
+            'ped_crossing': 50}
+    }
     
-        # do some data processing
-        scene_token = frame_data["scene_token"]
-        frame_token = frame_data["token"]
+    prog_bar = mmcv.ProgressBar(len(dataset))
+
+    patch_size = (60.0, 30.0)
+    canvas_size = (200, 100)
+    scale_x = canvas_size[1] / patch_size[1]
+    scale_y = canvas_size[0] / patch_size[0]
+    trans_x = canvas_size[1] / 2
+    trans_y = canvas_size[0] / 2
+
+    for i, data in enumerate(data_loader):
+        # CLASS2LABEL = {"divider": 0, "ped_crossing": 1, "boundary": 2}
+        # lets use seg2vector to get the bbox from the bev segmentation or GT-bev-mask
+        gt_seg_mask = data['gt_seg_mask'].data[0][0].cpu() # 1(3) * 200 * 100
+        gt_seg_mask = gt_seg_mask.permute(1, 2, 0).numpy() # 200 * 100 * 1(3)
         
-        if (token != frame_token):
-            continue
+        # vectors.append({
+        #     'class': cls_name,
+        #     'num_points': num_points,
+        #     'points': sampled
+        # })
+        scores_3d = []
+        labels_3d = []
+        pts_3d = []
+        boxes_3d = []
+        total_length = 0
+        for k in range(gt_seg_mask.shape[2]):
+            temp = gt_seg_mask[:, :, k]
+            vectors = bev_seg_to_vectors(temp, config) # divider, ped, boundary
+            if (len(vectors) == 0):
+                continue
+            total_length += len(vectors)
+            for vec in vectors:
+                scores_3d.extend([1.0])
+                labels_3d.extend([k])
+                points = vec['points']
+                
+                points = points - np.array([trans_x, trans_y])
+                points = points / np.array([scale_x, scale_y])
+                
+                pts_3d.append(points)
+                boxes_3d.append(compute_bbox(points)) # bbox: xmin, ymin, xmax, ymax
         
-        # load images and points
-        tensor_dump_root = test_data_root + "/dump/" + frame_token
-        points = tensor.load(f"{tensor_dump_root}/points.tensor", return_torch=True)
+        pts_bbox = {}
+        pts_bbox['boxes_3d'] = torch.tensor(boxes_3d)
+        pts_bbox['scores_3d'] = torch.tensor(scores_3d)
+        pts_bbox['labels_3d'] = torch.tensor(labels_3d)
+        pts_bbox['pts_3d'] = torch.tensor(pts_3d)
+    
+        bbox_list = []
+        bbox_list.append({})
+        bbox_list[0]["pts_bbox"] = pts_bbox
+        depart_results.extend(bbox_list)
         
-        # load parameters
-        lidar2img = tensor.load(f"{tensor_dump_root}/lidar2image.tensor", return_torch=True)
-        camera2ego = tensor.load(f"{tensor_dump_root}/camera2ego.tensor", return_torch=True)
-        camera_intrinsics = tensor.load(f"{tensor_dump_root}/camera_intrinsics.tensor", return_torch=True)
-        img_aug_matrix = tensor.load(f"{tensor_dump_root}/img_aug_matrix.tensor", return_torch=True)
-        lidar2ego = tensor.load(f"{tensor_dump_root}/lidar2ego.tensor", return_torch=True)
-        camera2lidar = tensor.load(f"{tensor_dump_root}/camera2lidar.tensor", return_torch=True)
+        # visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
         
-        # print(points.shape)
-        # print(lidar2img.shape)
-        # print(camera2ego.shape)
-        # print(camera_intrinsics.shape)
-        # print(img_aug_matrix.shape)
-        # print(lidar2ego.shape)
-        # print(camera2lidar.shape)
+        prog_bar.update()
         
-        # construct img_metas
-        img_metas = {}
-        img_metas['img_shape'] = [
-            (480, 800, 3), 
-            (480, 800, 3),
-            (480, 800, 3), 
-            (480, 800, 3), 
-            (480, 800, 3), 
-            (480, 800, 3)]
-        
-        def tensor2list(input_tensor):
-            squeezed_tensor = input_tensor.cpu().squeeze(0) # shape 1*6*4*4 to 6*4*4
-            result_list = [squeezed_tensor[i].numpy() for i in range(squeezed_tensor.size(0))]
-            return result_list
-        
-        # lidar2img.shape = 1 * 6 * 4 * 4
-        img_metas['lidar2img'] = tensor2list(lidar2img)
-        img_metas['camera2ego'] = tensor2list(camera2ego)
-        img_metas['camera_intrinsics'] = tensor2list(camera_intrinsics)
-        img_metas['img_aug_matrix'] = tensor2list(img_aug_matrix)
-        img_metas['lidar2ego'] = tensor2list(lidar2ego)
-        img_metas['camera2lidar'] = tensor2list(camera2lidar)
-        
-        temp_img_metas = data['img_metas'][0].data[0][0]
-        
-        self_data = mmcv_load_images(
-            nuscense_data_root,
-            frame_data["cams"],
-            img_metas['lidar2img'])
-        self_image = self_data['img'].unsqueeze(0)
-        img_metas['img_aug_matrix'] = self_data['img_aug_matrix']
-        
-        B, N, w, h, c = self_image.shape
-        images_data = self_image.contiguous()
-        images_data = images_data.permute(0, 1, 4, 2, 3) # B, N, c, w, h
-        # images_data = data['img'][0].data[0]
-        # points = data['points'].data[0]
-        
-        # img_metas = temp_img_metas
-        # only overide the nessesary
-        # print(img_metas['lidar2img'])
-        # print(temp_img_metas['lidar2img'])
-        # img_metas['lidar2img'] = temp_img_metas['lidar2img']
-        
-        # print(img_metas['camera2ego'])
-        # print(temp_img_metas['camera2ego'])
-        # img_metas['camera2ego'] = temp_img_metas['camera2ego']
-        
-        # print(img_metas['camera_intrinsics'])
-        # print(temp_img_metas['camera_intrinsics'])
-        # img_metas['camera_intrinsics'] = temp_img_metas['camera_intrinsics']
-        
-        # print(img_metas['img_aug_matrix'])
-        # print(temp_img_metas['img_aug_matrix'])
-        # img_metas['img_aug_matrix'] = temp_img_metas['img_aug_matrix']
-        
-        # print(img_metas['lidar2ego'])
-        # print(temp_img_metas['lidar2ego'])
-        # img_metas['lidar2ego'] = temp_img_metas['lidar2ego']
-        
-        # img_metas['camera2lidar'] = temp_img_metas['camera2lidar']
-        
-        with torch.no_grad():
-            images_data = images_data.cuda()
-            points = points.cuda()
-            img_feats = None
-            lidar_feat = None
-            
-            # step 1:
-            img_feats = raw_model.extract_img_feat(
-                img=images_data, img_metas=img_metas, len_queue=None)
-            
-            # step 2:
-            # lidar_feat = raw_model.extract_lidar_feat([points])
-            
-            # step 3:
-            new_prev_bev, bbox_pts = raw_model.simple_test_pts(
-                img_feats,
-                lidar_feat, # None to disable lidar
-                [img_metas],
-                prev_bev=None,
-                rescale=True)
-            bbox_list = [dict() for i in range(len([img_metas]))] # be careful about the len of [img_metas] = 1, not 6
-            for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
-                result_dict["pts_bbox"] = pts_bbox
-            depart_results.extend(bbox_list)
-            
-            ###### way2 :feed raw images to the raw_model, good
-            # # NOTIC: images_data shape would be changed if called with extract_img_feat() before
-            # _, bbox_list = raw_model.simple_test( # torch.Size([1, 6, 3, 480, 800])
-            #     [img_metas], 
-            #     images_data,
-            #     [points],
-            #     prev_bev=None,
-            #     rescale=True)
-            # depart_results.extend(bbox_list)
-            
-            prog_bar.update()
-            
-            visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
-        if i > 500:
+        if i > 1000:
             break
     # you can add the evaluate code here to get mAP data
     do_eval = True
-    if do_eval and len(depart_results) > 100:
+    if do_eval and len(depart_results) > 10:
         kwargs = {} if args.eval_options is None else args.eval_options
         kwargs['jsonfile_prefix'] = osp.join('test', args.config.split(
             '/')[-1].split('.')[-2], time.ctime().replace(' ', '_').replace(':', '_'))

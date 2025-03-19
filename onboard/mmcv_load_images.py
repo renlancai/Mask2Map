@@ -213,8 +213,8 @@ CAMS = ['CAM_FRONT_LEFT','CAM_FRONT','CAM_FRONT_RIGHT',
              'CAM_BACK_LEFT','CAM_BACK','CAM_BACK_RIGHT',]
 
 def visualize_results(data, pc_range, result, args, out_dir):
-
     img = data['img'][0].data[0]
+    token = data['img_metas'][0].data[0][0]['sample_idx']
     img_metas = data['img_metas'][0].data[0]
     gt_bboxes_3d = data['gt_bboxes_3d'].data[0]
     gt_labels_3d = data['gt_labels_3d'].data[0]
@@ -222,8 +222,6 @@ def visualize_results(data, pc_range, result, args, out_dir):
     pts_filename = img_metas[0]['pts_filename']
     pts_filename = osp.basename(pts_filename)
     pts_filename = pts_filename.replace('__LIDAR_TOP__', '_').split('.')[0]
-    
-    token = data['img_metas'][0].data[0][0]['sample_idx']
     
     sample_dir = osp.join(out_dir, token)
     mmcv.mkdir_or_exist(osp.abspath(sample_dir))
