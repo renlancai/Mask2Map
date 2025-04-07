@@ -206,6 +206,7 @@ class Mask2Map(MVXTwoStageDetector):
     def voxelize(self, points):
         feats, coords, sizes = [], [], []
         for k, res in enumerate(points):
+            # import pdb;pdb.set_trace()
             ret = self.lidar_modal_extractor["voxelize"](res)
             if len(ret) == 3:
                 # hard voxelize
@@ -230,27 +231,12 @@ class Mask2Map(MVXTwoStageDetector):
         return feats, coords, sizes
 
     @auto_fp16(apply_to=("points"), out_fp32=True)
-    def extract_pts_feat(self, pts):
-        """Extract features of points."""
-        voxels, coors, num_points = self.voxelize(pts)
-
-        voxel_features = self.pts_voxel_encoder(voxels, num_points, coors)
-        batch_size = coors[-1, 0] + 1
-        lidar_feat = self.pts_middle_encoder(voxel_features, coors, batch_size)
-        lidar_feat = self.pts_backbone(lidar_feat)
-        if self.with_pts_neck:
-            lidar_feat = self.pts_neck(lidar_feat)
-        return lidar_feat
-
-    @auto_fp16(apply_to=("points"), out_fp32=True)
     def extract_lidar_feat(self, points):
+        # import pdb;pdb.set_trace()
         feats, coords, sizes = self.voxelize(points)
         batch_size = coords[-1, 0] + 1
         lidar_feat = self.lidar_modal_extractor["backbone"](feats, coords, batch_size, sizes=sizes)
         return lidar_feat
-    
-        # lidar_feat_other = self.extract_pts_feat(points)
-        # return lidar_feat_other
 
     # @auto_fp16(apply_to=('img', 'points'))
     @force_fp32(apply_to=("img", "points", "prev_bev"))
@@ -294,6 +280,7 @@ class Mask2Map(MVXTwoStageDetector):
         Returns:
             dict: Losses of different branches.
         """
+        
         lidar_feat = None
         if self.modality == "fusion":
             lidar_feat = self.extract_lidar_feat(points)
@@ -428,6 +415,7 @@ class Mask2Map(MVXTwoStageDetector):
 
     def simple_test_pts(self, x, lidar_feat, img_metas, prev_bev=None, rescale=False):
         """Test function"""
+        # import pdb;pdb.set_trace()
         outs = self.pts_bbox_head(x, lidar_feat, img_metas, prev_bev=prev_bev)
 
         bbox_list = self.pts_bbox_head.get_bboxes(outs, img_metas, rescale=rescale) # why we need rescale be True?
@@ -439,12 +427,14 @@ class Mask2Map(MVXTwoStageDetector):
 
     def simple_test(self, img_metas, img=None, points=None, prev_bev=None, rescale=False, **kwargs):
         """Test function without augmentaiton."""
+        # import pdb;pdb.set_trace()
         lidar_feat = None
         if self.modality == "fusion":
             lidar_feat = self.extract_lidar_feat(points)
         img_feats = self.extract_feat(img=img, img_metas=img_metas) # without using img_metas
                 
         bbox_list = [dict() for i in range(len(img_metas))]
+        # import pdb;pdb.set_trace()
         new_prev_bev, bbox_pts = self.simple_test_pts(img_feats, lidar_feat, img_metas, prev_bev, rescale=rescale)
         for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
             result_dict["pts_bbox"] = pts_bbox

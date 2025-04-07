@@ -5,6 +5,7 @@ resume_from = None
 load_from = "./work_dirs/M2M_nusc_r50_full_1Phase_12n12ep/latest.pth"
 resume_optimizer = False
 
+deterministic = False
 #
 plugin = True
 plugin_dir = "projects/mmdet3d_plugin/"

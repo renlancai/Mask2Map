@@ -13,7 +13,6 @@ plugin_dir = "projects/mmdet3d_plugin/"
 
 # If point cloud range is changed, the models should also change their point
 # cloud range accordingly
-# point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
 point_cloud_range = [-15.0, -30.0, -10.0, 15.0, 30.0, 10.0]
 voxel_size = [0.15, 0.15, 20.0]
 dbound = [1.0, 35.0, 0.5]
@@ -64,8 +63,8 @@ _dim_ = 256
 _pos_dim_ = _dim_ // 2
 _ffn_dim_ = _dim_ * 2
 _num_levels_ = 1
-bev_h_ = 200
-bev_w_ = 100
+bev_h_ = 200 #60m, 0.3m
+bev_w_ = 100 #30m, 0.3m
 queue_length = 1  # each sequence contains `queue_length` frames.
 
 dn_enabled = True
@@ -74,7 +73,7 @@ aux_seg_cfg = dict(
     use_aux_seg=True,
     bev_seg=True,
     pv_seg=True,
-    seg_classes=1,
+    seg_classes=3, # test
     feat_down_sample=32,
     pv_thickness=1,
 )

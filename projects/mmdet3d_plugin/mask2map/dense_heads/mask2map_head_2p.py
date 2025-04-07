@@ -260,7 +260,7 @@ class Mask2MapHead_2Phase(DETRHead):
                 Shape [nb_dec, bs, num_query, 9].
         """
         num_vec = self.num_vec_one2one
-
+        # import pdb;pdb.set_trace()
         bs, num_cam, _, _, _ = mlvl_feats[0].shape
         dtype = mlvl_feats[0].dtype
 
