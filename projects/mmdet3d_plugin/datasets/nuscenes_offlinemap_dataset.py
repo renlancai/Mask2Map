@@ -602,7 +602,7 @@ class VectorizedLocalMap(object):
         fixed_ptsnum_per_line=-1,
         Ext_fixed_ptsnum_per_line=-1,
         padding_value=-10000,
-        thickness=3,
+        thickness=1,
         aux_seg=dict(use_aux_seg=False, bev_seg=False, pv_seg=False, seg_classes=1, feat_down_sample=32),
     ):
         """
@@ -682,12 +682,12 @@ class VectorizedLocalMap(object):
                 gt_semantic_mask = np.zeros((len(self.vec_classes), self.canvas_size[0], self.canvas_size[1]), dtype=np.uint8)
 
                 if self.aux_seg["pv_seg"]:
-                    num_cam = len(example["img_metas"].data["pad_shape"])
-                    img_shape = example["img_metas"].data["pad_shape"][0]
+                    num_cam = len(example["img_metas"][0].data["pad_shape"])
+                    img_shape = example["img_metas"][0].data["pad_shape"][0]
                     gt_pv_semantic_mask = np.zeros(
                         (num_cam, len(self.vec_classes), img_shape[0] // feat_down_sample, img_shape[1] // feat_down_sample), dtype=np.uint8
                     )
-                    lidar2img = example["img_metas"].data["lidar2img"]
+                    lidar2img = example["img_metas"][0].data["lidar2img"]
                     scale_factor = np.eye(4)
                     scale_factor[0, 0] *= 1 / 32
                     scale_factor[1, 1] *= 1 / 32

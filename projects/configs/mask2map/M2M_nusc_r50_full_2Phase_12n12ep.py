@@ -68,9 +68,9 @@ dn_enabled = True
 
 aux_seg_cfg = dict(
     use_aux_seg=True,
-    bev_seg=False,
+    bev_seg=True,
     pv_seg=True,
-    seg_classes=1,
+    seg_classes=3, # seg_classes=1,
     feat_down_sample=32,
     pv_thickness=1,
 )
@@ -392,6 +392,7 @@ data = dict(
         map_classes=map_classes,
         classes=class_names,
         modality=input_modality,
+        aux_seg=aux_seg_cfg,
     ),
     shuffler_sampler=dict(type="DistributedGroupSampler"),
     nonshuffler_sampler=dict(type="DistributedSampler"),

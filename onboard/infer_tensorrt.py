@@ -46,6 +46,48 @@ from pathlib import Path
 import os.path as osp
 
 from mmcv_load_images import load_images, mmcv_load_images, visualize_results
+from mmcv_load_images import Point, PointFiletr, load_nuscenes_lidar, load_lidar_with_filter_and_transform, PointTransoform
+
+from detection_head import BEVDecoder, CameraFeatures, BEVPooling, CameraFeaturesWithDepth
+from detection_head import ImgBEVPooling, FeatFuser, LidarBackboneScn, ImgBEVDownsampling
+from detection_head import is_same, compare_two_dicts, global_bev_pooling
+from infer_trt import build_trt, get_bindings_info, check_gpu_memory
+from voxelize import Voxelization
+
+import onnxruntime as ort
+import onnx
+from onnx import TensorProto
+import ctypes
+
+import tensorrt as trt
+import pycuda.driver as cuda
+import pycuda.autoinit
+
+from torch.utils.tensorboard import SummaryWriter
+
+def custom_argsort(x, dim):
+    values, indices = torch.sort(x, dim=dim)
+    return indices
+
+# torch.argsort = custom_argsort
+
+from torch.onnx import register_custom_op_symbolic  
+
+def prim_constant_symbolic(g, value):
+    const_tensor = g.op("Constant", value_t=torch.tensor(value))  
+    const_tensor.setType(const_tensor.type().with_sizes(value.shape))  
+    return const_tensor  
+
+
+def symbolic_randint(g, low, high, size, dtype=None, **kwargs):
+    # 生成[0,1)的随机数
+    rand = g.op("RandomUniform", output_i=1, dtype=1, 
+                high=1.0, low=0.0, seed=0.0)
+    # 缩放并转换为整数
+    scaled = g.op("Mul", rand, g.op("Constant", value_t=torch.tensor(high - low)))
+    result = g.op("Add", scaled, g.op("Constant", value_t=torch.tensor(low)))
+    return g.op("Cast", result, to_i=7)  # to_i=7表示int64
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -60,15 +102,10 @@ def parse_args():
     #                     default='ckpts/v299_110e-df3eb7e5.pth')
     
     # v2-99 images and points
-    # parser.add_argument('--config', help='test config file path',
-    #                     default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
-    # parser.add_argument('--checkpoint', help='checkpoint file',
-    #                     default='ckpts/v299_fusion-b0c02deb.pth')
-    # ResetNet50 images only
     parser.add_argument('--config', help='test config file path',
-                        default='projects/configs/mask2map/M2M_nusc_r50_full_2Phase_12n12ep.py')
+                        default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
     parser.add_argument('--checkpoint', help='checkpoint file',
-                        default='ckpts/r50_phase2.pth')
+                        default='ckpts/v299_fusion-b0c02deb.pth')
     
     parser.add_argument('--score-thresh', default=0.4, type=float, help='samples to visualize')
     
@@ -159,6 +196,11 @@ def parse_args():
 
 def main():
     args = parse_args()
+    
+    import os
+    os.environ["PYTORCH_JIT_LOG_LEVEL"] = "1"  # 启用JIT编译时的详细日志
+    os.environ["CUDA_LAUNCH_BLOCKING"] = "1"   # 强制同步CUDA操作以获取准确行号
+
 
     assert args.out or args.eval or args.format_only or args.show \
         or args.show_dir, \
@@ -180,44 +222,10 @@ def main():
         from mmcv.utils import import_modules_from_strings
         import_modules_from_strings(**cfg['custom_imports'])
 
-    # import modules from plguin/xx, registry will be updated
-    if hasattr(cfg, 'plugin'):
-        if cfg.plugin:
-            import importlib
-            if hasattr(cfg, 'plugin_dir'):
-                plugin_dir = cfg.plugin_dir
-                _module_dir = os.path.dirname(plugin_dir)
-                _module_dir = _module_dir.split('/')
-                _module_path = _module_dir[0]
-
-                for m in _module_dir[1:]:
-                    _module_path = _module_path + '.' + m
-                print(_module_path)
-                plg_lib = importlib.import_module(_module_path)
-            else:
-                # import dir is the dirpath for the config file
-                _module_dir = os.path.dirname(args.config)
-                _module_dir = _module_dir.split('/')
-                _module_path = _module_dir[0]
-                for m in _module_dir[1:]:
-                    _module_path = _module_path + '.' + m
-                print(_module_path)
-                plg_lib = importlib.import_module(_module_path)
-
     # set cudnn_benchmark
     if cfg.get('cudnn_benchmark', False):
         torch.backends.cudnn.benchmark = True
 
-    cfg.model.pretrained = None
-    # build the model and load checkpoint
-    cfg.model.train_cfg = None
-    model = build_model(cfg.model, test_cfg=cfg.get('test_cfg'))
-    fp16_cfg = cfg.get('fp16', None)
-    if fp16_cfg is not None:
-        wrap_fp16_model(model)
-    checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
-   
-    # ####dataloader & model inference type
     
     # in case the test dataset is concatenated
     samples_per_gpu = 1
@@ -247,14 +255,43 @@ def main():
         shuffle=False,
         # nonshuffler_sampler=cfg.data.nonshuffler_sampler,
     )
-    model = MMDataParallel(model, device_ids=[0])
-    
-    print(type(model))
-    model = model.cuda().eval()
-    raw_model = model.module
+
+    valid_data_token_list = {
+        "fd8420396768425eabec9bdddf7e64b6", # for sample0000.yaml
+        "30e55a3ec6184d8cb1944b39ba19d622",
+        "cc18fde20db74d30825b0b60ec511b7b",
+        "08e76760a8c64a92a86686baf68f6aff",
+        "2140329a6990437aa46b83c30f49cf49",
+        "01a7d01c014f406f87b8fe11976c3d0a",
+        "a2fada921a7d4141877f4a51328a21af",
+        "b06a815164ec466f9fdb525522bb3799",
+        "5bd85334fdf94fb99c7eaa45d5feba0d",
+        "61f89208546a4045af336659ebe8db05",
+        "3bf56ebb22b741339967a95a9fbe2081",
+        "296fcfbf2e29489699f1cb5631f38ff5",
+        "f7d75d25c86941f3aecfed9efea1a3e3",
+        "1dfecb8189f54b999f4e47ddaa677fd0",
+        "830ba619959e4802a955ac40c5ee9453",
+        "dc2b67cdadca4deb89d7d684f2894292",
+        "e1dffaba060040cfab07dec04790fbfa",
+        "be28204a6a5a42ed9939d95ec3f22f5f",
+        "77c3d98fab3e4d3ea65747caaa74d605",
+        "5224809ffef94a6e83454ad3930d3533",
+        "3c18f85f037744b6ae4c8a6f8dc578c2",
+        "000681a060c04755a1537cf83b53ba57",
+        "000868a72138448191b4092f75ed7776",
+        "0017c2623c914571a1ff2a37f034ffd7",
+        "00185acff6094c4da3858d78bf462b94",
+        "0018da40529f48678419d44d09da5369",
+        "0046092508b14f40a86760d11f9896bb",
+        "005cfc5e77bc4b60a28499a1fed536c5",
+        "005d3e821c4e4e0ab03f1ea1dcbf9cc8",
+        "006cbdb235c64999b6f5cfbb63ec88c4",
+        "006d520cb38a457fb11e4bf1600a6eb2",
+    }
     
     logger = get_root_logger()
-    # to use the gt
+    #to use the gt
     test_data_root = "/home/tsai/source_code_only/Lidar_AI_Solution/CUDA-BEVFusion/"
     
     def load_mapping(filename):
@@ -264,19 +301,55 @@ def main():
     #
     token_files = load_mapping(test_data_root + 'data/data_infos/token_mapping.yaml')
     
+    cuda.init()
+    device = torch.device('cuda')
+    
+    providers = ['CUDAExecutionProvider']
+    
+    camera_onnx_file = "onnx/camera_feat_slim.onnx"
+    ort_pv_feat = ort.InferenceSession(camera_onnx_file, providers=providers)
+    
+    bev_downsample_onnx_file = "onnx/camera_bev_downsample.onnx"
+    # ort_bev_downsmapler = ort.InferenceSession(bev_downsample_onnx_file, providers=providers)
+    
+    bev_decoder_onnx_file = "onnx/bev_decoder.onnx"
+    # ort_bev_decoder = ort.InferenceSession(bev_decoder_onnx_file, providers=providers)
+    
+    engine = build_trt(camera_onnx_file, "onnx/camera_feat.trt")
+    context = engine.create_execution_context() # affect the cuda-based spconv
+    stream = cuda.Stream()
+    output_idx = 1
+    input_shape = tuple(engine.get_binding_shape(0))
+    output_shape = tuple(engine.get_binding_shape(output_idx))
+    output_dtype = torch.float16 if engine.get_binding_dtype(output_idx)==trt.DataType.HALF else torch.float32
+
+    # print(input_shape, output_shape, output_dtype)
+    
+    output_tensor = torch.empty(output_shape).cuda()  
+
+
+
+    # while True:
+    #     print("start")
+    
     raw_results = []
     depart_results = []
+    
+    writer = SummaryWriter("logs")
     
     prog_bar = mmcv.ProgressBar(len(dataset))
     for i, data in enumerate(data_loader):
         token = data['img_metas'][0].data[0][0]['sample_idx']
+        # if token not in valid_data_token_list:
+        #     print(f'skip {token}')
+        #     continue
         
         # print(f'item:{i}  processing {token}')
         if ~(data['gt_labels_3d'].data[0][0] != -1).any():
             print(data['img_metas'][0].data[0][0]['sample_idx'])
             logger.error(f'\n empty gt for index {i}, continue')
             continue
-        
+
         if  token not in token_files:
             continue
         
@@ -286,15 +359,12 @@ def main():
         frame_data = None
         with open(filename_full, 'r') as file:
             frame_data = yaml.load(file, Loader=yaml.FullLoader)
-        if (frame_data is None):
-            continue
         
         nuscense_data_root = test_data_root
     
         # do some data processing
         scene_token = frame_data["scene_token"]
         frame_token = frame_data["token"]
-        
         if (token != frame_token):
             continue
         
@@ -310,29 +380,13 @@ def main():
         lidar2ego = tensor.load(f"{tensor_dump_root}/lidar2ego.tensor", return_torch=True)
         camera2lidar = tensor.load(f"{tensor_dump_root}/camera2lidar.tensor", return_torch=True)
         
-        # print(points.shape)
-        # print(lidar2img.shape)
-        # print(camera2ego.shape)
-        # print(camera_intrinsics.shape)
-        # print(img_aug_matrix.shape)
-        # print(lidar2ego.shape)
-        # print(camera2lidar.shape)
-        
-        # construct img_metas
-        img_metas = {}
-        img_metas['img_shape'] = [
-            (480, 800, 3), 
-            (480, 800, 3),
-            (480, 800, 3), 
-            (480, 800, 3), 
-            (480, 800, 3), 
-            (480, 800, 3)]
-        
         def tensor2list(input_tensor):
             squeezed_tensor = input_tensor.cpu().squeeze(0) # shape 1*6*4*4 to 6*4*4
             result_list = [squeezed_tensor[i].numpy() for i in range(squeezed_tensor.size(0))]
             return result_list
         
+        # construct img_metas
+        img_metas = {}
         # lidar2img.shape = 1 * 6 * 4 * 4
         img_metas['lidar2img'] = tensor2list(lidar2img)
         img_metas['camera2ego'] = tensor2list(camera2ego)
@@ -353,8 +407,7 @@ def main():
         B, N, w, h, c = self_image.shape
         images_data = self_image.contiguous()
         images_data = images_data.permute(0, 1, 4, 2, 3) # B, N, c, w, h
-        # images_data = data['img'][0].data[0]
-        # points = data['points'].data[0]
+    
         
         # img_metas = temp_img_metas
         # only overide the nessesary
@@ -377,7 +430,6 @@ def main():
         # print(img_metas['lidar2ego'])
         # print(temp_img_metas['lidar2ego'])
         # img_metas['lidar2ego'] = temp_img_metas['lidar2ego']
-        
         # img_metas['camera2lidar'] = temp_img_metas['camera2lidar']
         
         with torch.no_grad():
@@ -386,43 +438,50 @@ def main():
             img_feats = None
             lidar_feat = None
             
-            # step 1:
-            img_feats = raw_model.extract_img_feat(
-                img=images_data, img_metas=img_metas, len_queue=None)
+            camera_feat_file = f"{tensor_dump_root}/cameras_feat.tensor"
+            img_feats = tensor.load(camera_feat_file, return_torch=True).cuda()
+            img_feats = img_feats.to(torch.float32)
             
-            # step 2:
-            # lidar_feat = raw_model.extract_lidar_feat([points])
+            # validataion: bad
+            def torch_to_ort(tensor):
+                return ort.OrtValue.from_dlpack(
+                    torch.utils.dlpack.to_dlpack(tensor.contiguous()))
             
-            # step 3:
-            new_prev_bev, bbox_pts = raw_model.simple_test_pts(
-                img_feats,
-                lidar_feat, # None to disable lidar
-                [img_metas],
-                prev_bev=None,
-                rescale=True)
-            bbox_list = [dict() for i in range(len([img_metas]))] # be careful about the len of [img_metas] = 1, not 6
-            for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
-                result_dict["pts_bbox"] = pts_bbox
-            depart_results.extend(bbox_list)
+            # input_name = ort_pv_feat.get_inputs()[0].name
+            # output_name = ort_pv_feat.get_outputs()[0].name
             
-            ###### way2 :feed raw images to the raw_model, good
-            # # NOTIC: images_data shape would be changed if called with extract_img_feat() before
-            # _, bbox_list = raw_model.simple_test( # torch.Size([1, 6, 3, 480, 800])
-            #     [img_metas], 
-            #     images_data,
-            #     [points],
-            #     prev_bev=None,
-            #     rescale=True)
-            # depart_results.extend(bbox_list)
+            # ort_input = torch_to_ort(images_data)
+            # io_binding = ort_pv_feat.io_binding()
+            
+            # io_binding.bind_ortvalue_input(input_name, ort_input)
+            # io_binding.bind_output(output_name, 'cuda')  # 输出自动分配在 GPU
+
+            # ort_pv_feat.run_with_iobinding(io_binding)
+            # ort_output = io_binding.get_outputs()
+            # img_feat_onnx = torch.utils.dlpack.from_dlpack(
+            #     ort_output.to_dlpack()
+            # )
+            
+            input_name = ort_pv_feat.get_inputs()[0].name
+            ort_output = ort_pv_feat.run(None, {input_name: images_data.cpu().numpy()})
+            img_feat_onnx = torch.from_numpy(ort_output[0]).cuda()
+            
+            img_feat_onnx = img_feat_onnx.to(torch.float32)
+            print(f"_________{is_same(img_feat_onnx, img_feats)}")
+            max_error = np.max(np.abs((img_feat_onnx - img_feats).detach().cpu().numpy()))
+            print(f"max_error: {max_error}")
+            
+            bindings = [images_data.data_ptr(), output_tensor.data_ptr()]  
+            context.execute_async_v2(bindings=bindings, stream_handle=stream.handle)
+            stream.synchronize()
+            print(is_same(img_feats, output_tensor))
             
             prog_bar.update()
-            
-            visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
-        if i > 500:
+        if i > 10:
             break
     # you can add the evaluate code here to get mAP data
-    do_eval = True
-    if do_eval and len(depart_results) > 100:
+    do_eval = False
+    if do_eval and len(depart_results) > 5:
         kwargs = {} if args.eval_options is None else args.eval_options
         kwargs['jsonfile_prefix'] = osp.join('test', args.config.split(
             '/')[-1].split('.')[-2], time.ctime().replace(' ', '_').replace(':', '_'))
@@ -437,9 +496,14 @@ def main():
         eval_kwargs.update(dict(metric=args.eval, **kwargs))
         
         print("------------thisline---------")
+        
         # print(dataset.evaluate(raw_results, **eval_kwargs))
+        
         print("------------thisline---------")
+        
+        # eval_kwargs['evaluate_num'] = len(depart_results)
         print(dataset.evaluate(depart_results, **eval_kwargs))
+        
         print("------------thisline---------")
 
 if __name__ == '__main__':
