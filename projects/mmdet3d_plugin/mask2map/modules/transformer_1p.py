@@ -137,7 +137,6 @@ class Mask2Map_Transformer_1Phase(BaseModule):
                 nn.init.xavier_normal_(p)
 
     def lss_bev_encode(self, mlvl_feats, prev_bev=None, **kwargs):
-
         images = mlvl_feats[self.feat_down_sample_indice]
         img_metas = kwargs["img_metas"]
         encoder_outputdict = self.encoder(images, img_metas)
@@ -163,7 +162,6 @@ class Mask2Map_Transformer_1Phase(BaseModule):
         """
         obtain bev features.
         """
-
         ret_dict = self.lss_bev_encode(mlvl_feats, prev_bev=prev_bev, **kwargs)
         bev_embed = ret_dict["bev"]
         depth = ret_dict["depth"]
@@ -541,8 +539,7 @@ class Mask2Map_Transformer_1Phase(BaseModule):
         bs = mlvl_feats[0].size(0)
 
         num_vecs = self.num_vec_one2one
-
-        bev_embed_single = bev_embed.view(bs, self.bev_h, bev_w, bev_embed.shape[-1]).permute(0, 3, 1, 2).contiguous()
+        bev_embed_single = bev_embed.view(bs, bev_h, bev_w, bev_embed.shape[-1]).permute(0, 3, 1, 2).contiguous()
         bev_embed_ms = self.bev_encoder(bev_embed_single)
         bev_embed_ms = self.bev_neck(bev_embed_ms)
         mask_feat = bev_embed_ms[0].to(torch.float32)

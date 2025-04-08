@@ -638,7 +638,7 @@ class VectorizedLocalMap(object):
             instance_list = map_annotation[vec_class]
             for instance in instance_list:
                 vectors.append((LineString(np.array(instance)), self.CLASS2LABEL.get(vec_class, -1)))
-        # import pdb;pdb.set_trace()
+
         filtered_vectors = []
         gt_pts_loc_3d = []
         gt_pts_num_3d = []
@@ -682,12 +682,17 @@ class VectorizedLocalMap(object):
                 gt_semantic_mask = np.zeros((len(self.vec_classes), self.canvas_size[0], self.canvas_size[1]), dtype=np.uint8)
 
                 if self.aux_seg["pv_seg"]:
-                    num_cam = len(example["img_metas"][0].data["pad_shape"])
-                    img_shape = example["img_metas"][0].data["pad_shape"][0]
+                    # num_cam = len(example["img_metas"][0].data["pad_shape"])
+                    # img_shape = example["img_metas"][0].data["pad_shape"][0]
+                    # lidar2img = example["img_metas"][0].data["lidar2img"]
+
+                    num_cam = len(example["img_metas"].data["pad_shape"])
+                    img_shape = example["img_metas"].data["pad_shape"][0]
+                    lidar2img = example["img_metas"].data["lidar2img"]
+
                     gt_pv_semantic_mask = np.zeros(
                         (num_cam, len(self.vec_classes), img_shape[0] // feat_down_sample, img_shape[1] // feat_down_sample), dtype=np.uint8
                     )
-                    lidar2img = example["img_metas"][0].data["lidar2img"]
                     scale_factor = np.eye(4)
                     scale_factor[0, 0] *= 1 / 32
                     scale_factor[1, 1] *= 1 / 32
@@ -730,7 +735,6 @@ class VectorizedLocalMap(object):
             patch_size=self.patch_size,
             canvas_size=self.canvas_size,
         )
-
         anns_results = dict(
             gt_vecs_pts_loc=gt_instance,
             gt_vecs_label=gt_labels,
@@ -1254,8 +1258,6 @@ class CustomNuScenesOfflineLocalMapDataset(CustomNuScenesDataset):
                                 padding_value=0, cpu_only=False
                   'gt_bboxes_3d': stack=False, cpu_only=True
         """
-        # import ipdb;ipdb.set_trace()
-
         anns_results = self.vector_map.gen_vectorized_samples(
             input_dict["annotation"] if "annotation" in input_dict.keys() else input_dict["ann_info"],
             example=example,
