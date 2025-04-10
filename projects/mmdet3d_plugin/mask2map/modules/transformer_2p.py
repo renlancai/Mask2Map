@@ -674,7 +674,7 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
         bs = mlvl_feats[0].size(0)
 
         num_vecs = self.num_vec_one2one
-
+        # import pdb;pdb.set_trace()
         bev_embed_single = bev_embed.view(bs, self.bev_h, self.bev_w, bev_embed.shape[-1]).permute(0, 3, 1, 2).contiguous()
         bev_embed_ms = self.bev_encoder(bev_embed_single)
         bev_embed_ms = self.bev_neck(bev_embed_ms)
@@ -772,8 +772,7 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
         bs = mlvl_feats[0].size(0)
 
         num_vecs = self.num_vec_one2one
-
-        bev_embed_single = bev_embed.view(bs, self.bev_h, self.bev_w, bev_embed.shape[-1]).permute(0, 3, 1, 2).contiguous()
+        bev_embed_single = bev_embed.view(bs, self.bev_h, self.bev_w, -1).permute(0, 3, 1, 2).contiguous()
     
         bev_embed_ms = self.bev_encoder(bev_embed_single) #good
         bev_embed_ms = self.bev_neck(bev_embed_ms) # some bad codes inside: MultiScale-Self-Attn
@@ -980,5 +979,4 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
         # self.debug["inter_states"] = inter_states
         # self.debug["inter_references_out"] = inter_references_out
         # self.debug["init_reference_out"] = init_reference_out
-
         return bev_embed, mask_pred_list, cls_pred_list, depth, inter_states, init_reference_out, inter_references_out, mask_dict

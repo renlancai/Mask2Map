@@ -528,9 +528,13 @@ def main():
             lidar_feat = None
 
             # #in: B * N * C * W * H, out:  B * N * C * W * H
-            # camera_extractor = CameraFeatures(raw_model)
-            # camera_extractor.cuda().eval()
-            # img_feats = camera_extractor(images_data)
+            camera_extractor = CameraFeatures(raw_model)
+            camera_extractor.cuda().eval()
+            img_feats = camera_extractor(images_data)
+            
+            camera_feat_file = f"{tensor_dump_root}/cameras_feat.tensor"
+            tensor.save(img_feats, camera_feat_file)
+            # img_feats = tensor.load(camera_feat_file, return_torch=True).cuda()
             
             # torch.onnx.export( # bad
             #     camera_extractor, # exported model
@@ -541,26 +545,28 @@ def main():
             #     do_constant_folding=True,
             #     input_names=['img'],
             #     output_names=['img_feats'],
-            #     dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
+            #     # dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
             # )
-            # break
         
-            # validataion: bad
+            # ort_pv_feat = ort.InferenceSession(camera_onnx_file, providers=providers)
             # input_name = ort_pv_feat.get_inputs()[0].name
             # ort_output = ort_pv_feat.run(None, {input_name: images_data.cpu().numpy()})
             # img_feat_onnx = torch.from_numpy(ort_output[0]).cuda()
-            # print(f"_________{is_same(img_feat_onnx, img_feats)}")
+            # print(f"_________{is_same(img_feat_onnx, img_feats)}______\n")
             # max_error = np.max(np.abs((img_feat_onnx - img_feats).detach().cpu().numpy()))
             # print(f"max_error: {max_error}")
+            
+            # writer.add_graph(camera_extractor, images_data)
+            # writer.close()
             # break
             
-            # img_pooler = ImgBEVPooling(raw_model.pts_bbox_head, img_metas)
-            # img_pooler.cuda().eval()
-            # bev_embed_img, depth = img_pooler(img_feats)
+            img_pooler = ImgBEVPooling(raw_model.pts_bbox_head, img_metas)
+            img_pooler.cuda().eval()
+            bev_embed_img, depth = img_pooler(img_feats)
             
-            img_bev_extractor = CameraFeaturesWithDepth(raw_model, img_metas)
-            img_bev_extractor.cuda().eval()
-            img_feats, enhanced_feats, depth, geom = img_bev_extractor(images_data)
+            # img_bev_extractor = CameraFeaturesWithDepth(raw_model, img_metas)
+            # img_bev_extractor.cuda().eval()
+            # img_feats, enhanced_feats, depth, geom = img_bev_extractor(images_data)
             
             # onnx test: good?
             # input_name = ort_bev_feat.get_inputs()[0].name
@@ -578,7 +584,6 @@ def main():
             # print(is_same(enhanced_feats1, enhanced_feats))
             # print(is_same(depth1, depth))
             # print(is_same(geom1, geom))
-            
            
             # torch.onnx.export( # good
             #     img_bev_extractor, # exported model
@@ -597,14 +602,14 @@ def main():
             #                   'geom': {0: 'batch_size'}}
             # )
             
-            img_bev_feats = global_bev_pooling(geom, enhanced_feats,
-                        img_bev_extractor.dx,
-                        img_bev_extractor.bx,
-                        img_bev_extractor.nx) # outside C++ code
+            # img_bev_feats = global_bev_pooling(geom, enhanced_feats,
+            #             img_bev_extractor.dx,
+            #             img_bev_extractor.bx,
+            #             img_bev_extractor.nx)
             
-            bev_downsampler = ImgBEVDownsampling(raw_model)
-            bev_downsampler.cuda().eval()
-            bev_embed_img = bev_downsampler(img_bev_feats)
+            # bev_downsampler = ImgBEVDownsampling(raw_model)
+            # bev_downsampler.cuda().eval()
+            # bev_embed_img = bev_downsampler(img_bev_feats)
             
             # writer.add_graph(bev_downsampler, img_bev_feats)
             # writer.close()
@@ -633,11 +638,7 @@ def main():
             # )
             # break
             
-            # camera_feat_file = f"{tensor_dump_root}/cameras_feat.tensor"
-            # tensor.save(img_feats, camera_feat_file)
-            # img_feats = tensor.load(camera_feat_file, return_torch=True).cuda()
 
-            
             # trt testing: fail
             # img_feat_trt = torch.empty(output_shape, dtype=output_dtype, device="cuda")
             # bindings = [images_data.data_ptr(), img_feat_trt.data_ptr()]
@@ -691,10 +692,9 @@ def main():
             # )
             # break
             
-            # lidar_feat_file = f"{tensor_dump_root}/lidar_feat.tensor"
-            # # tensor.save(lidar_feat, lidar_feat_file)
-            # lidar_loaded = tensor.load(lidar_feat_file, return_torch=True)
-            # lidar_feat = lidar_loaded.cuda()
+            lidar_feat_file = f"{tensor_dump_root}/lidar_feat.tensor"
+            # tensor.save(lidar_feat, lidar_feat_file)
+            # lidar_feat = tensor.load(lidar_feat_file, return_torch=True).cuda()
             
             # 3.1.1.1 get bev features use lss_bev_encode(future using Cuda code)
             feat_fuser = FeatFuser(raw_model.pts_bbox_head)
@@ -721,14 +721,14 @@ def main():
             # assert check, "Simplified ONNX model could not be validated"
             # onnx.save(onnx_simp, "onnx/feat_fuser.onnx")
             
-            # bev_feat_file = f"{tensor_dump_root}/bev_feat.tensor"
-            # tensor.save(bev_embed, bev_feat_file)
+            bev_feat_file = f"{tensor_dump_root}/bev_feat.tensor"
+            tensor.save(bev_embed, bev_feat_file)
             # bev_embed = tensor.load(bev_feat_file, return_torch=True).cuda()
             
-            # depth_feat_file = f"{tensor_dump_root}/depth.tensor"
-            # tensor.save(depth, depth_feat_file)
+            depth_feat_file = f"{tensor_dump_root}/depth.tensor"
+            tensor.save(depth, depth_feat_file)
             # depth = tensor.load(depth_feat_file, return_torch=True).cuda()
-            
+
             bev_detection_head = BEVDecoder(raw_model.pts_bbox_head, img_metas)
             bev_detection_head.cuda().eval()
             bev_detection_head.forward = bev_detection_head.forward_trt
@@ -796,7 +796,7 @@ def main():
             
             prog_bar.update()
             # visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
-        if i > 100:
+        if i > 100000:
             break
     # you can add the evaluate code here to get mAP data
     do_eval = True

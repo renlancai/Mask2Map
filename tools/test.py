@@ -34,13 +34,19 @@ warnings.filterwarnings('ignore', category=UserWarning, module='module_name')
 def parse_args():
     parser = argparse.ArgumentParser(
         description='MMDet test (and eval) a model')
-    parser.add_argument('config', help='test config file path')
-    parser.add_argument('checkpoint', help='checkpoint file')
+    # parser.add_argument('config', help='test config file path')
+    # parser.add_argument('checkpoint', help='checkpoint file')
     
     # parser.add_argument('--config', help='test config file path',
     #                     default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep.py')
     # parser.add_argument('--checkpoint', help='checkpoint file',
     #                     default='ckpts/v299_fusion_55_simple-df3eb7e5.pth')
+    
+    # v2-99 images and points
+    parser.add_argument('--config', help='test config file path',
+                        default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
+    parser.add_argument('--checkpoint', help='checkpoint file',
+                        default='ckpts/v299_fusion-b0c02deb.pth')
     
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(

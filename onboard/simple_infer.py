@@ -60,15 +60,16 @@ def parse_args():
     #                     default='ckpts/v299_110e-df3eb7e5.pth')
     
     # v2-99 images and points
-    # parser.add_argument('--config', help='test config file path',
-    #                     default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
-    # parser.add_argument('--checkpoint', help='checkpoint file',
-    #                     default='ckpts/v299_fusion-b0c02deb.pth')
-    # ResetNet50 images only
     parser.add_argument('--config', help='test config file path',
-                        default='projects/configs/mask2map/M2M_nusc_r50_full_2Phase_12n12ep.py')
+                        default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
     parser.add_argument('--checkpoint', help='checkpoint file',
-                        default='ckpts/r50_phase2.pth')
+                        default='ckpts/v299_fusion-b0c02deb.pth')
+    
+    # ResetNet50 images only
+    # parser.add_argument('--config', help='test config file path',
+    #                     default='projects/configs/mask2map/M2M_nusc_r50_full_2Phase_12n12ep.py')
+    # parser.add_argument('--checkpoint', help='checkpoint file',
+    #                     default='ckpts/r50_phase2.pth')
     
     parser.add_argument('--score-thresh', default=0.4, type=float, help='samples to visualize')
     
