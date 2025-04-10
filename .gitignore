@@ -170,3 +170,9 @@ nohup*
 *.mp4
 all_pic*
 code_bak*
+learn_onxx/*.onnx
+learn_onxx/*.png
+learn_onxx/build/*
+learn_onxx/*.so
+learn_onxx/*.egg-info
+learn_onxx/*.engine

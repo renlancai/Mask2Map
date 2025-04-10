@@ -378,7 +378,6 @@ class BEVDecoder(nn.Module):
         # return img_feats
         (mask_pred_list, cls_pred_list, mask_aware_query_feat, bev_embed, bev_embed_ms, depth, dn_information) = \
         self.model.transformer.IMPNet_part(
-            mlvl_feats,
             ouput_dic=ret_dict,
         )
 
@@ -612,22 +611,19 @@ class BEVDecoder(nn.Module):
     
     def forward_trt(
             self,
-            img_feats,
+            # img_feats,
             bev_embed,
-            depth,
+            # depth,
             **kwargs,
         ):
-
-        mlvl_feats = [img_feats]
-        mlvl_feats[0] = mlvl_feats[0].float()
         
+        depth = None
         img_metas = self.img_metas
         
         ret_dict = dict(bev=bev_embed, depth=depth)
         
-        bs = mlvl_feats[0].size(0)
-        
-        device = mlvl_feats[0].device
+        bs = bev_embed.size(0)
+        device = bev_embed.device
         num_vec = self.num_vec_one2one
         
         self_attn_mask = torch.zeros((num_vec, num_vec), dtype=torch.float32, device=device)
@@ -638,7 +634,6 @@ class BEVDecoder(nn.Module):
         
         (mask_pred_list, cls_pred_list, mask_aware_query_feat, bev_embed, bev_embed_ms, depth, dn_information) = \
         self.model.transformer.IMPNet_part(
-            mlvl_feats,
             ouput_dic=ret_dict,
         ) #if close attention, onnx good
         
@@ -777,15 +772,17 @@ class BEVDecoder(nn.Module):
 
         outputs_seg = None
         outputs_pv_seg = None
-        if self.aux_seg["use_aux_seg"]:
-            seg_bev_embed = \
-                bev_embed.reshape(bs, self.model.bev_h, self.model.bev_w, -1).permute(0, 3, 1, 2).contiguous()
-            if self.aux_seg["bev_seg"]:
-                outputs_seg = self.model.seg_head(seg_bev_embed)
-            bs, num_cam, embed_dims, feat_h, feat_w = mlvl_feats[-1].shape
-            if self.aux_seg["pv_seg"]:
-                outputs_pv_seg = self.model.pv_seg_head(mlvl_feats[-1].flatten(0, 1))
-                outputs_pv_seg = outputs_pv_seg.view(bs, num_cam, -1, feat_h, feat_w)
+        # mlvl_feats = [img_feats]
+        # mlvl_feats[0] = mlvl_feats[0].float()
+        # if self.aux_seg["use_aux_seg"]:
+        #     seg_bev_embed = \
+        #         bev_embed.reshape(bs, self.model.bev_h, self.model.bev_w, -1).permute(0, 3, 1, 2).contiguous()
+        #     if self.aux_seg["bev_seg"]:
+        #         outputs_seg = self.model.seg_head(seg_bev_embed)
+        #     bs, num_cam, embed_dims, feat_h, feat_w = mlvl_feats[-1].shape
+        #     if self.aux_seg["pv_seg"]:
+        #         outputs_pv_seg = self.model.pv_seg_head(mlvl_feats[-1].flatten(0, 1))
+        #         outputs_pv_seg = outputs_pv_seg.view(bs, num_cam, -1, feat_h, feat_w)
 
         if self.model.tr_cls_join and self.model.training:
             outputs_classes_one2one = outputs_classes_one2one + outputs_segm_cls_scores_one2one[-1:][..., :3].contiguous()
@@ -800,7 +797,8 @@ class BEVDecoder(nn.Module):
             "all_pts_preds": outputs_pts_coords_one2one, # used to bbox decode
             "enc_bbox_preds": None,
             "enc_pts_preds": None,
-            "depth": depth,
+            # "depth": depth,
+            "depth": None,
             "seg": outputs_seg,
             "segm_mask_preds": outputs_segm_mask_pred_one2one,
             "segm_cls_scores": outputs_segm_cls_scores_one2one,

@@ -765,11 +765,11 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
 
         return mask_pred_list, cls_pred_list, instance_query_feat, bev_embed, bev_embed_ms, depth, dn_information, kwargs
 
-    def IMPNet_part(self, mlvl_feats, ouput_dic):
+    def IMPNet_part(self, ouput_dic):
         
         bev_embed = ouput_dic["bev"]
         depth = ouput_dic["depth"]
-        bs = mlvl_feats[0].size(0)
+        bs = bev_embed.size(0)
 
         num_vecs = self.num_vec_one2one
         bev_embed_single = bev_embed.view(bs, self.bev_h, self.bev_w, -1).permute(0, 3, 1, 2).contiguous()
@@ -808,7 +808,7 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
         mask_pred_list.append(mask_pred)
         
         if self.dn_enabled == False or self.training == False: #test?
-            self_attn_mask = torch.zeros((num_vecs, num_vecs), dtype=torch.float32, device=mlvl_feats[0].device)
+            self_attn_mask = torch.zeros((num_vecs, num_vecs), dtype=torch.float32, device=bev_embed.device)
             self_attn_mask[self.num_vec_one2one:, :self.num_vec_one2one] = 1.0
             self_attn_mask[:self.num_vec_one2one, self.num_vec_one2one:] = 1.0
             self_attn_mask = self_attn_mask > 0.5
