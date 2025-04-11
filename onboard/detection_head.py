@@ -637,6 +637,8 @@ class BEVDecoder(nn.Module):
             ouput_dic=ret_dict,
         ) #if close attention, onnx good
         
+        # if we can get mask_pred_list, then I can simply use post-process to vectorize the mask_pred_list
+        
         # MMPnet
         # 2 call self.PositionalQueryGenerator
         pts_query = self.pts_query
@@ -771,14 +773,15 @@ class BEVDecoder(nn.Module):
             )
 
         outputs_seg = None
+        if self.aux_seg["use_aux_seg"] and self.aux_seg["bev_seg"]:
+            seg_bev_embed = \
+                bev_embed.reshape(bs, self.model.bev_h, self.model.bev_w, -1).permute(0, 3, 1, 2).contiguous()
+            outputs_seg = self.model.seg_head(seg_bev_embed)
+        
         outputs_pv_seg = None
         # mlvl_feats = [img_feats]
         # mlvl_feats[0] = mlvl_feats[0].float()
         # if self.aux_seg["use_aux_seg"]:
-        #     seg_bev_embed = \
-        #         bev_embed.reshape(bs, self.model.bev_h, self.model.bev_w, -1).permute(0, 3, 1, 2).contiguous()
-        #     if self.aux_seg["bev_seg"]:
-        #         outputs_seg = self.model.seg_head(seg_bev_embed)
         #     bs, num_cam, embed_dims, feat_h, feat_w = mlvl_feats[-1].shape
         #     if self.aux_seg["pv_seg"]:
         #         outputs_pv_seg = self.model.pv_seg_head(mlvl_feats[-1].flatten(0, 1))
@@ -818,7 +821,7 @@ class BEVDecoder(nn.Module):
             "debug": self.debug,
         }
     
-        return outputs_classes_one2one, outputs_coords_one2one, outputs_pts_coords_one2one
+        return outputs_classes_one2one, outputs_coords_one2one, outputs_pts_coords_one2one, outputs_seg
 
     @force_fp32(apply_to=("preds_dicts"))
     def get_bboxes(self, classes, coords, pts_coords):

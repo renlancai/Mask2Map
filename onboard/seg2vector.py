@@ -34,8 +34,9 @@ warnings.filterwarnings('ignore', category=UserWarning, module='module_name')
 from pathlib import Path
 import os.path as osp
 
-from mmcv_load_images import load_images, mmcv_load_images, visualize_results
-from mask2vector import bev_seg_to_vectors, sample_contour, compute_bbox
+# from mmcv_load_images import load_images, mmcv_load_images, visualize_results
+# from mask2vector import bev_seg_to_vectors, sample_contour, compute_bbox
+from mask2vector import poseprocess_decode
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -46,19 +47,18 @@ def parse_args():
     # v2-99 images only
     # parser.add_argument('--config', help='test config file path',
     #                     default='projects/configs/mask2map/M2M_nusc_v299_full_2Phase_55n55ep.py')
-    # parser.add_argument('--checkpoint', help='checkpoint file',
-    #                     default='ckpts/v299_110e-df3eb7e5.pth')
+
     
     # v2-99 images and points
     # parser.add_argument('--config', help='test config file path',
     #                     default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
-    # parser.add_argument('--checkpoint', help='checkpoint file',
-    #                     default='ckpts/v299_fusion-b0c02deb.pth')
+    
     # ResetNet50 images only
     parser.add_argument('--config', help='test config file path',
-                        default='projects/configs/mask2map/M2M_nusc_r50_full_2Phase_12n12ep.py')
-    parser.add_argument('--checkpoint', help='checkpoint file',
-                        default='ckpts/r50_phase2.pth')
+                        default='projects/configs/mask2map/M2M_nusc_r50_full_2Phase_12n12ep.py') # good
+    
+    # parser.add_argument('--config', help='test config file path',
+    #                     default='projects/configs/mask2map/M2M_nusc_r50_full_fusion_2Phase_22n22ep.py')
     
     parser.add_argument('--score-thresh', default=0.4, type=float, help='samples to visualize')
     
@@ -197,15 +197,6 @@ def main():
     # set cudnn_benchmark
     if cfg.get('cudnn_benchmark', False):
         torch.backends.cudnn.benchmark = True
-
-    cfg.model.pretrained = None
-    # build the model and load checkpoint
-    cfg.model.train_cfg = None
-    model = build_model(cfg.model, test_cfg=cfg.get('test_cfg'))
-    fp16_cfg = cfg.get('fp16', None)
-    if fp16_cfg is not None:
-        wrap_fp16_model(model)
-    checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
    
     # in case the test dataset is concatenated
     samples_per_gpu = 1
@@ -236,13 +227,7 @@ def main():
         shuffle=False,
         # nonshuffler_sampler=cfg.data.nonshuffler_sampler,
     )
-    model = MMDataParallel(model, device_ids=[0])
     
-    print(type(model))
-    model = model.cuda().eval()
-    raw_model = model.module
-    
-    logger = get_root_logger()
     # to use the gt
     test_data_root = "/home/tsai/source_code_only/Lidar_AI_Solution/CUDA-BEVFusion/"
     
@@ -270,6 +255,7 @@ def main():
 
     patch_size = (60.0, 30.0)
     canvas_size = (200, 100)
+    # canvas_size = (800, 400)
     scale_x = canvas_size[1] / patch_size[1]
     scale_y = canvas_size[0] / patch_size[0]
     trans_x = canvas_size[1] / 2
@@ -286,44 +272,16 @@ def main():
         #     'num_points': num_points,
         #     'points': sampled
         # })
-        scores_3d = []
-        labels_3d = []
-        pts_3d = []
-        boxes_3d = []
-        total_length = 0
-        for k in range(gt_seg_mask.shape[2]):
-            temp = gt_seg_mask[:, :, k]
-            vectors = bev_seg_to_vectors(temp, config) # divider, ped, boundary
-            if (len(vectors) == 0):
-                continue
-            total_length += len(vectors)
-            for vec in vectors:
-                scores_3d.extend([1.0])
-                labels_3d.extend([k])
-                points = vec['points']
-                
-                points = points - np.array([trans_x, trans_y])
-                points = points / np.array([scale_x, scale_y])
-                
-                pts_3d.append(points)
-                boxes_3d.append(compute_bbox(points)) # bbox: xmin, ymin, xmax, ymax
+        bbox_list = poseprocess_decode( \
+            gt_seg_mask, config, trans_x, trans_y, scale_x, scale_y)
         
-        pts_bbox = {}
-        pts_bbox['boxes_3d'] = torch.tensor(boxes_3d)
-        pts_bbox['scores_3d'] = torch.tensor(scores_3d)
-        pts_bbox['labels_3d'] = torch.tensor(labels_3d)
-        pts_bbox['pts_3d'] = torch.tensor(pts_3d)
-    
-        bbox_list = []
-        bbox_list.append({})
-        bbox_list[0]["pts_bbox"] = pts_bbox
         depart_results.extend(bbox_list)
         
         # visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
         
         prog_bar.update()
         
-        if i > 1000:
+        if i > 20000:
             break
     # you can add the evaluate code here to get mAP data
     do_eval = True

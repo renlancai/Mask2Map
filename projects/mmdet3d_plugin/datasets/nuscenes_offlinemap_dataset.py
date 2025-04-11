@@ -684,10 +684,16 @@ class VectorizedLocalMap(object):
                 if self.aux_seg["pv_seg"]:
                     num_cam = len(example["img_metas"][0].data["pad_shape"])
                     img_shape = example["img_metas"][0].data["pad_shape"][0]
+                    lidar2img = example["img_metas"][0].data["lidar2img"]
+                    
+                    # num_cam = len(example["img_metas"].data["pad_shape"])
+                    # img_shape = example["img_metas"].data["pad_shape"][0]
+                    # lidar2img = example["img_metas"].data["lidar2img"]
+                    
                     gt_pv_semantic_mask = np.zeros(
                         (num_cam, len(self.vec_classes), img_shape[0] // feat_down_sample, img_shape[1] // feat_down_sample), dtype=np.uint8
                     )
-                    lidar2img = example["img_metas"][0].data["lidar2img"]
+                    
                     scale_factor = np.eye(4)
                     scale_factor[0, 0] *= 1 / 32
                     scale_factor[1, 1] *= 1 / 32

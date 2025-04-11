@@ -61,6 +61,8 @@ _ffn_dim_ = _dim_ * 2
 _num_levels_ = 1
 bev_h_ = 200
 bev_w_ = 100
+# bev_h_ = 800
+# bev_w_ = 400
 queue_length = 1  # each sequence contains `queue_length` frames.
 
 dn_enabled = True

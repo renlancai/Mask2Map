@@ -43,10 +43,15 @@ def parse_args():
     #                     default='ckpts/v299_fusion_55_simple-df3eb7e5.pth')
     
     # v2-99 images and points
+    # parser.add_argument('--config', help='test config file path',
+    #                     default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
+    # parser.add_argument('--checkpoint', help='checkpoint file',
+    #                     default='ckpts/v299_fusion-b0c02deb.pth')
+    
     parser.add_argument('--config', help='test config file path',
-                        default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
+                        default='projects/configs/mask2map/M2M_nusc_r50_full_fusion_2Phase_22n22ep.py')
     parser.add_argument('--checkpoint', help='checkpoint file',
-                        default='ckpts/v299_fusion-b0c02deb.pth')
+                        default='ckpts/mAP_epoch_21_simple-74d32860.pth')
     
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(

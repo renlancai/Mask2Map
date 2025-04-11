@@ -69,7 +69,7 @@ aux_seg_cfg = dict(
     use_aux_seg=True,
     bev_seg=True,
     pv_seg=True,
-    seg_classes=1,
+    seg_classes=3, # test
     feat_down_sample=32,
     pv_thickness=1,
 )

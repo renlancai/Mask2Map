@@ -1,9 +1,7 @@
 import numpy as np
 import cv2
+import torch
 from sklearn.cluster import DBSCAN
-
-import numpy as np
-import cv2
 from scipy.interpolate import interp1d
 
 def bev_seg_to_vectors(bev_seg, class_config, num_points=20):
@@ -87,8 +85,6 @@ def sample_contour(points, target_points):
     return np.column_stack([fx(t), fy(t)]).astype(np.float32)
 
 
-import numpy as np
-
 def compute_bbox(points):
     """
     计算包含所有点的最小轴对齐包围盒
@@ -103,6 +99,40 @@ def compute_bbox(points):
     xmax, ymax = np.max(points, axis=0)
     return (xmin.item(), ymin.item(), xmax.item(), ymax.item())
 
+
+def poseprocess_decode(gt_seg_mask, config, trans_x, trans_y, scale_x, scale_y):
+    scores_3d = []
+    labels_3d = []
+    pts_3d = []
+    boxes_3d = []
+    total_length = 0
+    for k in range(gt_seg_mask.shape[2]):
+        temp = gt_seg_mask[:, :, k]
+        vectors = bev_seg_to_vectors(temp, config) # divider, ped, boundary
+        if (len(vectors) == 0):
+            continue
+        total_length += len(vectors)
+        for vec in vectors:
+            scores_3d.extend([1.0])
+            labels_3d.extend([k])
+            points = vec['points']
+            
+            points = points - np.array([trans_x, trans_y])
+            points = points / np.array([scale_x, scale_y])
+            
+            pts_3d.append(points)
+            boxes_3d.append(compute_bbox(points)) # bbox: xmin, ymin, xmax, ymax
+    
+    pts_bbox = {}
+    pts_bbox['boxes_3d'] = torch.tensor(boxes_3d)
+    pts_bbox['scores_3d'] = torch.tensor(scores_3d)
+    pts_bbox['labels_3d'] = torch.tensor(labels_3d)
+    pts_bbox['pts_3d'] = torch.tensor(pts_3d)
+
+    bbox_list = []
+    bbox_list.append({})
+    bbox_list[0]["pts_bbox"] = pts_bbox
+    return bbox_list
 
 # 示例使用 --------------------------------------------------
 if __name__ == "__main__":

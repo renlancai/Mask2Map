@@ -776,13 +776,15 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
     
         bev_embed_ms = self.bev_encoder(bev_embed_single) #good
         bev_embed_ms = self.bev_neck(bev_embed_ms) # some bad codes inside: MultiScale-Self-Attn
+        
+        # import pdb;pdb.set_trace()
         mask_feat = bev_embed_ms[0].to(torch.float32)
         ms_memorys = bev_embed_ms[:0:-1]
         
         decoder_inputs = []
         decoder_pos_encodings = []
         size_list = []
-        for i in range(self.num_transformer_feat_level):
+        for i in range(self.num_transformer_feat_level): # = 3
             size_list.append(ms_memorys[i].shape[-2:])
             decoder_input = ms_memorys[i]
             decoder_input = decoder_input.flatten(2)
@@ -818,7 +820,7 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
             self_attn_mask = self_attn_mask.repeat((1, self.num_heads, 1, 1))
             self_attn_mask = self_attn_mask.flatten(0, 1)
         
-        for i in range(self.num_segm_decoder_layers):
+        for i in range(self.num_segm_decoder_layers): # = 3
             level_idx = i % self.num_transformer_feat_level
             # if a mask is all True(all background), then set it all False.
             mask_sum = (attn_mask.sum(-1) != attn_mask.shape[-1]).unsqueeze(-1)
@@ -840,12 +842,6 @@ class Mask2Map_Transformer_2Phase_CP(BaseModule):
             cls_pred, mask_pred, attn_mask = self._forward_head(
                 instance_query_feat, mask_feat, ms_memorys[(i + 1) % self.num_transformer_feat_level].shape[-2:]
             )
-
-            if self.dn_enabled and i != self.num_segm_decoder_layers - 1 and self.training:
-                padding_mask = padding_mask_3level[(i + 1) % self.num_segm_decoder_layers]
-                attn_mask = attn_mask.view([bs, self.num_heads, -1, attn_mask.shape[-1]])
-                attn_mask[:, :, :-num_vecs] = padding_mask
-                attn_mask = attn_mask.flatten(0, 1)
 
             cls_pred_list.append(cls_pred)
             mask_pred_list.append(mask_pred)
