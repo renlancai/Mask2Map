@@ -54,11 +54,11 @@ def parse_args():
     #                     default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
     
     # ResetNet50 images only
-    parser.add_argument('--config', help='test config file path',
-                        default='projects/configs/mask2map/M2M_nusc_r50_full_2Phase_12n12ep.py') # good
-    
     # parser.add_argument('--config', help='test config file path',
-    #                     default='projects/configs/mask2map/M2M_nusc_r50_full_fusion_2Phase_22n22ep.py')
+    #                     default='projects/configs/mask2map/M2M_nusc_r50_full_2Phase_12n12ep.py') # good
+    
+    parser.add_argument('--config', help='test config file path',
+                        default='projects/configs/mask2map/M2M_nusc_r50_full_fusion_2Phase_22n22ep.py') #bad?
     
     parser.add_argument('--score-thresh', default=0.4, type=float, help='samples to visualize')
     
@@ -227,18 +227,7 @@ def main():
         shuffle=False,
         # nonshuffler_sampler=cfg.data.nonshuffler_sampler,
     )
-    
-    # to use the gt
-    test_data_root = "/home/tsai/source_code_only/Lidar_AI_Solution/CUDA-BEVFusion/"
-    
-    def load_mapping(filename):
-        """Load token mapping from YAML cache"""
-        with open(filename, 'r') as f:
-            return yaml.safe_load(f)
-    #
-    token_files = load_mapping(test_data_root + 'data/data_infos/token_mapping.yaml')
-    
-    raw_results = []
+
     depart_results = []
     
     config = {
@@ -272,6 +261,8 @@ def main():
         #     'num_points': num_points,
         #     'points': sampled
         # })
+        
+        ## !!!!WARNING: to enable the mask2vector, set test.aux_seg = aux_seg_cfg, in config file
         bbox_list = poseprocess_decode( \
             gt_seg_mask, config, trans_x, trans_y, scale_x, scale_y)
         
@@ -281,7 +272,7 @@ def main():
         
         prog_bar.update()
         
-        if i > 20000:
+        if i > 200:
             break
     # you can add the evaluate code here to get mAP data
     do_eval = True
@@ -299,8 +290,6 @@ def main():
             eval_kwargs.pop(key, None)
         eval_kwargs.update(dict(metric=args.eval, **kwargs))
         
-        print("------------thisline---------")
-        # print(dataset.evaluate(raw_results, **eval_kwargs))
         print("------------thisline---------")
         print(dataset.evaluate(depart_results, **eval_kwargs))
         print("------------thisline---------")
