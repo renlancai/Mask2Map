@@ -65,13 +65,9 @@ import pycuda.autoinit
 
 from torch.utils.tensorboard import SummaryWriter
 
-def custom_argsort(x, dim):
-    values, indices = torch.sort(x, dim=dim)
-    return indices
 
-# torch.argsort = custom_argsort
-
-from torch.onnx import register_custom_op_symbolic  
+from torch.onnx import register_custom_op_symbolic
+from mask2vector import poseprocess_decode
 
 def prim_constant_symbolic(g, value):
     const_tensor = g.op("Constant", value_t=torch.tensor(value))  
@@ -102,10 +98,15 @@ def parse_args():
     #                     default='ckpts/v299_110e-df3eb7e5.pth')
     
     # v2-99 images and points
+    # parser.add_argument('--config', help='test config file path',
+    #                     default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
+    # parser.add_argument('--checkpoint', help='checkpoint file',
+    #                     default='ckpts/v299_fusion-b0c02deb.pth')
+    
     parser.add_argument('--config', help='test config file path',
-                        default='projects/configs/mask2map/M2M_nusc_v299_fusion_full_2Phase_22n22ep_cloud.py')
+                        default='projects/configs/mask2map/M2M_nusc_r50_full_fusion_2Phase_22n22ep.py')
     parser.add_argument('--checkpoint', help='checkpoint file',
-                        default='ckpts/v299_fusion-b0c02deb.pth')
+                        default='ckpts/mAP_epoch_21_simple-74d32860.pth')
     
     parser.add_argument('--score-thresh', default=0.4, type=float, help='samples to visualize')
     
@@ -392,6 +393,22 @@ def main():
     
     writer = SummaryWriter("logs")
     
+    config = {
+        'divider': 1,
+        'boundary': 2,
+        'ped_crossing': 3,
+        'min_area': {
+            'divider': 30,
+            'boundary': 50,
+            'ped_crossing': 50}
+    }
+    patch_size = (60.0, 30.0)
+    canvas_size = (200, 100)
+    scale_x = canvas_size[1] / patch_size[1]
+    scale_y = canvas_size[0] / patch_size[0]
+    trans_x = canvas_size[1] / 2
+    trans_y = canvas_size[0] / 2
+    
     prog_bar = mmcv.ProgressBar(len(dataset))
     for i, data in enumerate(data_loader):
         token = data['img_metas'][0].data[0][0]['sample_idx']
@@ -533,7 +550,8 @@ def main():
             # img_feats = camera_extractor(images_data)
             
             # camera_feat_file = f"{tensor_dump_root}/cameras_feat.tensor"
-            # # tensor.save(img_feats, camera_feat_file)
+            # tensor.save(img_feats, camera_feat_file)
+            
             # img_feats = tensor.load(camera_feat_file, return_torch=True).cuda()
             
             # torch.onnx.export( # bad
@@ -562,7 +580,7 @@ def main():
             
             # img_pooler = ImgBEVPooling(raw_model.pts_bbox_head, img_metas)
             # img_pooler.cuda().eval()
-            # bev_embed_img, depth = img_pooler(img_feats)
+            # bev_embed_img, depth = img_pooler(img_feats) #already being downsampled
             
             # depth_feat_file = f"{tensor_dump_root}/depth.tensor"
             # tensor.save(depth, depth_feat_file)
@@ -728,6 +746,8 @@ def main():
             
             bev_feat_file = f"{tensor_dump_root}/bev_feat.tensor"
             # tensor.save(bev_embed, bev_feat_file)
+            # prog_bar.update()
+            # continue
             bev_embed = tensor.load(bev_feat_file, return_torch=True).cuda()
 
             bev_detection_head = BEVDecoder(raw_model.pts_bbox_head, img_metas)
@@ -735,7 +755,7 @@ def main():
             bev_detection_head.forward = bev_detection_head.forward_trt
             classes, coords, pts_coords, bev_embed_seg = bev_detection_head(
                 bev_embed)
-            import pdb;pdb.set_trace()
+
             # with torch.no_grad():
             #     torch.onnx.export( # testing
             #         bev_detection_head, # exported model
@@ -787,6 +807,10 @@ def main():
             bbox_list = [dict() for i in range(len([img_metas]))] # be careful about the len of [img_metas] = 1, not 6
             for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
                 result_dict["pts_bbox"] = pts_bbox
+            
+            # bev_embed_seg = bev_embed_seg.squeeze(0).permute(1, 2, 0).contiguous()
+            # bev_embed_seg = bev_embed_seg.cpu().numpy()
+            # bbox_list = poseprocess_decode(bev_embed_seg, config, trans_x, trans_y, scale_x, scale_y) # bad
             
             depart_results.extend(bbox_list)
             
