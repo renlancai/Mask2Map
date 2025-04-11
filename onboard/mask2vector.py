@@ -134,7 +134,46 @@ def poseprocess_decode(gt_seg_mask, config, trans_x, trans_y, scale_x, scale_y):
     bbox_list[0]["pts_bbox"] = pts_bbox
     return bbox_list
 
-# 示例使用 --------------------------------------------------
+
+import torch.nn.functional as F
+def threshold_onehot(tensor, threshold=0.5, bg_class=None):
+    # Softmax归一化
+    probs = F.softmax(tensor, dim=-1)  # [H, W, C]‌:ml-citation{ref="6" data="citationList"}
+    
+    # 获取最大概率及对应索引
+    max_probs, indices = torch.max(probs, dim=-1, keepdim=True)  # [H, W, 1]‌:ml-citation{ref="6" data="citationList"}
+    
+    # 生成原始one-hot
+    onehot = torch.zeros_like(probs)
+    onehot.scatter_(-1, indices, 1.0)  # [H, W, C]‌:ml-citation{ref="6" data="citationList"}
+    
+    # 应用概率阈值过滤
+    mask = (max_probs >= threshold).float()  # 阈值判断‌:ml-citation{ref="1,5" data="citationList"}
+    if bg_class is not None:
+        # 指定背景类
+        bg_tensor = torch.zeros_like(onehot)
+        bg_tensor[..., bg_class] = 1.0
+        return torch.where(mask.bool(), onehot, bg_tensor)
+    else:
+        # 未指定时置零
+        return onehot * mask
+
+def channel_threshold_mask(tensor: torch.Tensor, threshold: float) -> torch.Tensor:
+    max_values, max_indices = torch.max(tensor, dim=-1, keepdim=True)  # [H,W,1]
+    threshold_mask = (max_values >= threshold)  # [H,W,1]
+    
+    # 关键修正点：保持索引维度与目标张量一致
+    binary_tensor = torch.zeros_like(tensor)
+    binary_tensor.scatter_(
+        dim=-1,
+        index=max_indices,  # 直接使用 [H,W,1] 形状索引
+        src=torch.ones_like(binary_tensor)
+    )
+    
+    return binary_tensor * threshold_mask.float()
+
+
+
 if __name__ == "__main__":
     # 创建测试数据
     dummy_seg = np.zeros((256, 256), dtype=np.uint8)

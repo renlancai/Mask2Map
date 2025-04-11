@@ -67,7 +67,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 from torch.onnx import register_custom_op_symbolic
-from mask2vector import poseprocess_decode
+from mask2vector import poseprocess_decode, channel_threshold_mask
 
 def prim_constant_symbolic(g, value):
     const_tensor = g.op("Constant", value_t=torch.tensor(value))  
@@ -746,15 +746,17 @@ def main():
             
             bev_feat_file = f"{tensor_dump_root}/bev_feat.tensor"
             # tensor.save(bev_embed, bev_feat_file)
-            # prog_bar.update()
-            # continue
+            
             bev_embed = tensor.load(bev_feat_file, return_torch=True).cuda()
-
             bev_detection_head = BEVDecoder(raw_model.pts_bbox_head, img_metas)
             bev_detection_head.cuda().eval()
             bev_detection_head.forward = bev_detection_head.forward_trt
             classes, coords, pts_coords, bev_embed_seg = bev_detection_head(
                 bev_embed)
+            
+            bev_seg_file = f"{tensor_dump_root}/bev_seg.tensor"
+            # tensor.save(bev_embed_seg, bev_seg_file)
+            # bev_embed_seg = tensor.load(bev_seg_file, return_torch=True).cuda()
 
             # with torch.no_grad():
             #     torch.onnx.export( # testing
@@ -791,9 +793,8 @@ def main():
             # coords = torch.from_numpy(ort_output[1]).cuda()
             # pts_coords = torch.from_numpy(ort_output[2]).cuda()
             
-            # post process
+            # #post process
             bbox_list_test = bev_detection_head.get_bboxes(classes, coords, pts_coords)
-            
             bbox_pts = []
             for bboxes, scores, labels, pts in bbox_list_test: # bbox_list
                 result_dict = dict(
@@ -804,11 +805,16 @@ def main():
                 )
                 bbox_pts.append(result_dict)
             
-            bbox_list = [dict() for i in range(len([img_metas]))] # be careful about the len of [img_metas] = 1, not 6
+            bbox_list = [dict() for i in range(len([img_metas]))]
             for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
                 result_dict["pts_bbox"] = pts_bbox
             
-            # bev_embed_seg = bev_embed_seg.squeeze(0).permute(1, 2, 0).contiguous()
+            # gt_seg_mask = data['gt_seg_mask'].data[0][0].cpu()
+            # gt_seg_mask = gt_seg_mask.permute(1, 2, 0).numpy()
+            # bbox_list = poseprocess_decode(gt_seg_mask, config, trans_x, trans_y, scale_x, scale_y)
+            
+            # bev_embed_seg = bev_embed_seg.squeeze(0).permute(1, 2, 0)
+            # bev_embed_seg = channel_threshold_mask(bev_embed_seg, 0.2)
             # bev_embed_seg = bev_embed_seg.cpu().numpy()
             # bbox_list = poseprocess_decode(bev_embed_seg, config, trans_x, trans_y, scale_x, scale_y) # bad
             
@@ -816,7 +822,7 @@ def main():
             
             prog_bar.update()
             # visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
-        if i > 200:
+        if i > 100:
             break
     # you can add the evaluate code here to get mAP data
     do_eval = True
