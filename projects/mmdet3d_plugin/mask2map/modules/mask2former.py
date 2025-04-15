@@ -591,6 +591,7 @@ class MSDeformAttnPixelDecoder(BaseModule):
                         features, each in shape (batch_size, c, h, w).
         """
         # generate padding mask for each level, for each image
+        # return self.level_encoding.weight
         batch_size = feats[0].shape[0]
         encoder_input_list = []
         padding_mask_list = []

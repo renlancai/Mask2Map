@@ -374,7 +374,6 @@ class BEVDecoder(nn.Module):
         self_attn_mask = self_attn_mask > 0.5    
         kwargs["self_attn_mask"] = self_attn_mask #good
 
-
         # return img_feats
         (mask_pred_list, cls_pred_list, mask_aware_query_feat, bev_embed, bev_embed_ms, depth, dn_information) = \
         self.model.transformer.IMPNet_part(
@@ -609,6 +608,18 @@ class BEVDecoder(nn.Module):
 
         return ret_list
     
+    def forward_bev_encoder(
+            self,
+            bev_embed
+        ):
+
+        bs = bev_embed.size(0)
+        bev_embed_single = bev_embed.view(bs, self.bev_h, self.bev_w, -1).permute(0, 3, 1, 2).contiguous()
+        bev_embed_ms = self.model.transformer.bev_encoder(bev_embed_single)
+        bev_embed_ms = self.model.transformer.bev_neck(bev_embed_ms)
+        
+        return bev_embed_ms
+    
     def forward_trt(
             self,
             # img_feats,
@@ -618,26 +629,12 @@ class BEVDecoder(nn.Module):
         ):
         
         depth = None
-        img_metas = self.img_metas
-        
         ret_dict = dict(bev=bev_embed, depth=depth)
-        
-        bs = bev_embed.size(0)
-        device = bev_embed.device
-        num_vec = self.num_vec_one2one
-        
-        self_attn_mask = torch.zeros((num_vec, num_vec), dtype=torch.float32, device=device)
-        self_attn_mask[self.num_vec_one2one:, :self.num_vec_one2one] = 1.0
-        self_attn_mask[:self.num_vec_one2one, self.num_vec_one2one:] = 1.0
-        self_attn_mask = self_attn_mask > 0.5
-        kwargs["self_attn_mask"] = self_attn_mask #good
         
         (mask_pred_list, cls_pred_list, mask_aware_query_feat, bev_embed, bev_embed_ms, depth, dn_information) = \
         self.model.transformer.IMPNet_part(
             ouput_dic=ret_dict,
         ) #if close attention, onnx good
-        
-        # if we can get mask_pred_list, then I can simply use post-process to vectorize the mask_pred_list
         
         # MMPnet
         # 2 call self.PositionalQueryGenerator
@@ -652,6 +649,17 @@ class BEVDecoder(nn.Module):
             map_known_indice=map_known_indice,
         ) # almost good
         
+        
+        img_metas = self.img_metas
+        
+        bs = bev_embed.size(0)
+        device = bev_embed.device
+        num_vec = self.num_vec_one2one
+        self_attn_mask = torch.zeros((num_vec, num_vec), dtype=torch.float32, device=device)
+        self_attn_mask[self.num_vec_one2one:, :self.num_vec_one2one] = 1.0
+        self_attn_mask[:self.num_vec_one2one, self.num_vec_one2one:] = 1.0
+        self_attn_mask = self_attn_mask > 0.5
+        kwargs["self_attn_mask"] = self_attn_mask #good
         
         # 3 call self.GeometricFeatureExtractor
         query, key, value, mask_aware_query, mask_aware_query_norm = self.model.transformer.GeometricFeatureExtractor(

@@ -751,13 +751,8 @@ def main():
             bev_detection_head = BEVDecoder(raw_model.pts_bbox_head, img_metas)
             bev_detection_head.cuda().eval()
             bev_detection_head.forward = bev_detection_head.forward_trt
-            classes, coords, pts_coords, bev_embed_seg = bev_detection_head(
-                bev_embed)
+            # bev_detection_head.forward = bev_detection_head.forward_bev_encoder
             
-            bev_seg_file = f"{tensor_dump_root}/bev_seg.tensor"
-            # tensor.save(bev_embed_seg, bev_seg_file)
-            # bev_embed_seg = tensor.load(bev_seg_file, return_torch=True).cuda()
-
             # with torch.no_grad():
             #     torch.onnx.export( # testing
             #         bev_detection_head, # exported model
@@ -768,13 +763,18 @@ def main():
             #         opset_version=13,
             #         do_constant_folding=True,
             #         input_names=['bev_embed'],
-            #         output_names=['classes', 'coords', 'pts_coords'],
+            #         output_names=['bev_embed_ms'],
             #         dynamic_axes={
             #             'bev_embed': {0: 'batch_size'},
-            #             'classes': {0: 'batch_size'},
-            #             'coords': {0: 'batch_size'},
-            #             'pts_coords': {0: 'batch_size'}
+            #             'bev_embed_ms': {0: 'batch_size'}
             #         },
+            #         # output_names=['classes', 'coords', 'pts_coords'],
+            #         # dynamic_axes={
+            #         #     'bev_embed': {0: 'batch_size'},
+            #         #     'classes': {0: 'batch_size'},
+            #         #     'coords': {0: 'batch_size'},
+            #         #     'pts_coords': {0: 'batch_size'}
+            #         # },
             #     )
             #     print("test done!\n")
             # break
@@ -792,6 +792,13 @@ def main():
             # classes = torch.from_numpy(ort_output[0]).cuda()
             # coords = torch.from_numpy(ort_output[1]).cuda()
             # pts_coords = torch.from_numpy(ort_output[2]).cuda()
+            
+            classes, coords, pts_coords, bev_embed_seg = bev_detection_head(
+                bev_embed)
+            
+            bev_seg_file = f"{tensor_dump_root}/bev_seg.tensor"
+            # tensor.save(bev_embed_seg, bev_seg_file)
+            # bev_embed_seg = tensor.load(bev_seg_file, return_torch=True).cuda()
             
             # #post process
             bbox_list_test = bev_detection_head.get_bboxes(classes, coords, pts_coords)
@@ -822,7 +829,7 @@ def main():
             
             prog_bar.update()
             # visualize_results(data, cfg.point_cloud_range, bbox_list, args, "test_model/")
-        if i > 100:
+        if i > 10000:
             break
     # you can add the evaluate code here to get mAP data
     do_eval = True
